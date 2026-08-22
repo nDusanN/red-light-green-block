@@ -23,30 +23,30 @@
  * These are EXECUTION gas only, as seen from inside the EVM. A real transaction also pays the
  * 21,000 intrinsic cost and for its calldata, both added explicitly below.
  *
- * CAVEAT, STATED PLAINLY: these are Foundry measurements of the EVM's cost model, not observed
- * `gasUsed` from Monad testnet receipts. They should agree, and `scripts/check-gas.ts` re-checks
- * them against real receipts after a deploy. Until that has been run against a live deployment,
- * treat them as well-founded but unconfirmed on the real chain.
+ * THE FOUNDRY FIGURES WERE NOT ENOUGH, AND THIS IS THE IMPORTANT PART.
+ *
+ * Foundry said a fresh `join` costs 75,620 execution gas, which with intrinsic and calldata came to
+ * a declared limit of 103,935. Live `eth_estimateGas` against the deployed contract returned
+ * 118,819 — roughly 23% higher. Every join therefore ran out of gas and reverted, and because
+ * Monad charges the DECLARED limit, each failure cost the player the full amount for nothing.
+ *
+ * The failure was thoroughly misleading downstream: joins reverted silently (viem's
+ * `waitForTransactionReceipt` resolves happily on a reverted receipt), so every following `step`
+ * failed with `NotJoined`, which surfaced as a large "missed window" count and sent me looking for
+ * a step-timing bug that did not exist.
+ *
+ * So the declared limits below come from LIVE `eth_estimateGas` against the deployed contract, and
+ * the Foundry numbers are kept only as a regression check on the contract itself. A local EVM
+ * measurement is not a substitute for the real chain.
+ *
+ * Confirmed while measuring: a receipt's `gasUsed` comes back exactly equal to the declared limit.
+ * Sending `join` with `gas = 2 * 118,819` produced `gasUsed = 237,638`. That is Monad's
+ * charge-on-declared-limit model visible directly in a receipt, and it is why a loose limit is a
+ * real cost rather than a harmless safety margin.
  */
 
 /** Intrinsic cost every transaction pays before any code runs. */
 export const INTRINSIC_TX_GAS = 21_000n;
-
-/** Cost of one non-zero calldata byte. */
-const CALLDATA_NONZERO_BYTE_GAS = 16n;
-
-/**
- * Calldata cost for a call with a 4-byte selector and `words` 32-byte arguments, assuming every
- * byte is non-zero.
- *
- * Assuming all-non-zero overstates the real cost — a `uint32` block number leaves 28 leading zero
- * bytes, which cost 4 gas each rather than 16. The overstatement is about 340 gas on a ~60,000 gas
- * transaction, and it buys immunity from ever under-declaring because a block number happened to
- * have an unusual byte pattern. That trade is worth it; a much larger blanket buffer would not be.
- */
-function calldataGas(words: bigint): bigint {
-  return (4n + words * 32n) * CALLDATA_NONZERO_BYTE_GAS;
-}
 
 /**
  * Margin applied on top of a measured worst case. 1.075x.
@@ -68,6 +68,32 @@ function withMargin(gas: bigint): bigint {
 
 /* ------------------------------------------------------------------ *
  * Measured execution gas (forge test, cold storage, EVM-internal)
+ * ------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------ *
+ * LIVE estimates from eth_estimateGas against the deployed contract.
+ * These are what the declared limits are built from.
+ * ------------------------------------------------------------------ */
+
+/** Live estimate for an ordinary `step`, from a joined player. */
+export const LIVE_STEP_GAS = 48_400n;
+
+/** Live estimate for a fresh address joining. */
+export const LIVE_JOIN_GAS = 118_819n;
+
+/** Live estimate for `startRound`. */
+export const LIVE_START_ROUND_GAS = 37_050n;
+
+/**
+ * Headroom for the winning step, which additionally writes `roundWinner` from zero.
+ *
+ * A fresh non-zero SSTORE is 20,000 gas; 24,000 is that plus slack. It cannot be estimated live
+ * because estimating it requires a player already standing one step from the finish.
+ */
+export const WINNING_STEP_EXTRA_GAS = 24_000n;
+
+/* ------------------------------------------------------------------ *
+ * Foundry measurements — kept as a regression check on the contract.
  * ------------------------------------------------------------------ */
 
 /** An ordinary green step that advances the player. */
@@ -113,21 +139,15 @@ export const MEASURED_START_ROUND_GAS = 49_789n;
  * Declared limits
  * ------------------------------------------------------------------ */
 
-/** `step(uint32)` — one 32-byte argument. */
-const STEP_CALLDATA_GAS = calldataGas(1n);
-
-/** `join()` and `startRound()` — selector only. */
-const NO_ARG_CALLDATA_GAS = calldataGas(0n);
-
 /** Limit for an ordinary step. This is what the overwhelming majority of taps declare. */
-export const STEP_GAS_LIMIT = withMargin(INTRINSIC_TX_GAS + STEP_CALLDATA_GAS + MEASURED_STEP_GREEN_GAS);
+export const STEP_GAS_LIMIT = withMargin(LIVE_STEP_GAS);
 
 /** Limit for a step that might be the winning one. */
-export const WINNING_STEP_GAS_LIMIT = withMargin(INTRINSIC_TX_GAS + STEP_CALLDATA_GAS + MEASURED_STEP_WINNING_GAS);
+export const WINNING_STEP_GAS_LIMIT = withMargin(LIVE_STEP_GAS + WINNING_STEP_EXTRA_GAS);
 
-export const JOIN_GAS_LIMIT = withMargin(INTRINSIC_TX_GAS + NO_ARG_CALLDATA_GAS + MEASURED_JOIN_FIRST_OF_ROUND_GAS);
+export const JOIN_GAS_LIMIT = withMargin(LIVE_JOIN_GAS);
 
-export const START_ROUND_GAS_LIMIT = withMargin(INTRINSIC_TX_GAS + NO_ARG_CALLDATA_GAS + MEASURED_START_ROUND_GAS);
+export const START_ROUND_GAS_LIMIT = withMargin(LIVE_START_ROUND_GAS);
 
 /**
  * How many steps from the finish the client starts declaring the winning-step limit.
@@ -158,5 +178,4 @@ export function stepGasLimit(pos: number, trackLength: number): bigint {
  * behind it. The baseline is 1.5x applied to the same measured cost, which is the closest
  * like-for-like comparison available without running a second wallet.
  */
-export const NAIVE_STEP_GAS_LIMIT =
-  ((INTRINSIC_TX_GAS + STEP_CALLDATA_GAS + MEASURED_STEP_GREEN_GAS) * 15_000n) / BPS_DENOMINATOR;
+export const NAIVE_STEP_GAS_LIMIT = (LIVE_STEP_GAS * 15_000n) / BPS_DENOMINATOR;

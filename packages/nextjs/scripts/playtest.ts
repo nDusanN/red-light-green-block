@@ -24,6 +24,7 @@ import {
   createPublicClient,
   createWalletClient,
   custom,
+  decodeErrorResult,
   decodeFunctionResult,
   defineChain,
   encodeFunctionData,
@@ -97,9 +98,11 @@ const stats = {
   stepsLanded: 0,
   eliminated: 0,
   missedWindow: 0,
+  roundNotActive: 0,
   alreadyActed: 0,
   sendErrors: 0,
   wins: 0,
+  roundsStarted: 0,
   inclusionMs: [] as number[],
 };
 
@@ -193,6 +196,16 @@ if (fundedCount !== bots.length) {
 }
 console.log(`funded and verified: ${fundedCount}/${bots.length}`);
 
+// Wait for consensus to SEE the funding, which is not the same as it having executed.
+//
+// Monad's consensus validates blocks against state from k=3 blocks ago, and an account's gas
+// budget is min(10 MON, balance in that lagged state). A wallet funded a moment ago still looks
+// empty to consensus, so its first transaction is rejected outright with "Signer had insufficient
+// balance" -- even though eth_getBalance already reports the funds and a receipt already exists.
+// Waiting for the receipt is necessary and not sufficient.
+await new Promise(r => setTimeout(r, 2500));
+console.log("waited for consensus to see the funding (k=3 block lag)");
+
 // ---- Make sure a round is live -----------------------------------------
 let round = await readRound();
 if (!round.active) {
@@ -209,6 +222,72 @@ if (!round.active) {
 console.log(`round ${round.roundId}, anchor block ${round.startBlock}, ends ${round.endBlock}`);
 
 // ---- Each bot plays independently ---------------------------------------
+/** Re-simulates a join to recover the custom error name behind a reverted receipt. */
+async function joinRevertReason(from: string): Promise<string | undefined> {
+  try {
+    await pool.call("eth_call", [
+      {
+        from,
+        to: ADDRESS,
+        data: encodeFunctionData({ abi: RED_LIGHT_GREEN_BLOCK_ABI, functionName: "join", args: [] }),
+      },
+      "latest",
+    ]);
+    return "no revert on simulation";
+  } catch (error) {
+    const text = String(error);
+    for (const name of ["RoundNotActive", "AlreadyJoined"]) if (text.includes(name)) return name;
+    const match = text.match(/0x[0-9a-fA-F]{8}/);
+    if (match) {
+      try {
+        return decodeErrorResult({ abi: RED_LIGHT_GREEN_BLOCK_ABI, data: match[0] as `0x${string}` }).errorName;
+      } catch {
+        return text.slice(0, 120);
+      }
+    }
+    return text.slice(0, 120);
+  }
+}
+
+/** Re-simulates a step to recover the custom error name behind a reverted receipt. */
+async function revertReason(from: string, maxBlock: bigint): Promise<string | undefined> {
+  try {
+    await pool.call("eth_call", [
+      {
+        from,
+        to: ADDRESS,
+        data: encodeFunctionData({
+          abi: RED_LIGHT_GREEN_BLOCK_ABI,
+          functionName: "step",
+          args: [Number(maxBlock)],
+        }),
+      },
+      "latest",
+    ]);
+    return undefined;
+  } catch (error) {
+    const text = String(error);
+    for (const name of [
+      "RoundNotActive",
+      "StepWindowMissed",
+      "AlreadyActedThisBlock",
+      "NotJoined",
+      "PlayerEliminated",
+    ]) {
+      if (text.includes(name)) return name;
+    }
+    const match = text.match(/0x[0-9a-fA-F]{8}/);
+    if (match) {
+      try {
+        return decodeErrorResult({ abi: RED_LIGHT_GREEN_BLOCK_ABI, data: match[0] as `0x${string}` }).errorName;
+      } catch {
+        return undefined;
+      }
+    }
+    return undefined;
+  }
+}
+
 async function runBot(account: (typeof bots)[number], index: number) {
   const client = createWalletClient({ account, transport, chain });
   let pos = 0;
@@ -226,7 +305,31 @@ async function runBot(account: (typeof bots)[number], index: number) {
       continue;
     }
 
-    if (block > round.endBlock) break;
+    // A round is only 300 blocks (~91s). Without this the bots keep stepping into a dead round and
+    // every revert gets miscounted as a missed window, which hides the real result completely.
+    if (block > round.endBlock) {
+      if (index === 0) {
+        try {
+          const hash = await client.sendTransaction({
+            to: ADDRESS,
+            data: encodeFunctionData({ abi: RED_LIGHT_GREEN_BLOCK_ABI, functionName: "startRound", args: [] }),
+            gas: START_ROUND_GAS_LIMIT,
+          });
+          await publicClient.waitForTransactionReceipt({ hash });
+          round = await readRound();
+          console.log(`  round expired; started round ${round.roundId}`);
+          stats.roundsStarted++;
+        } catch {
+          await new Promise(r => setTimeout(r, 500));
+        }
+      } else {
+        await new Promise(r => setTimeout(r, 800));
+        round = await readRound();
+      }
+      joined = false;
+      pos = 0;
+      continue;
+    }
     if (block === lastActedBlock) {
       await new Promise(r => setTimeout(r, 60));
       continue;
@@ -239,7 +342,19 @@ async function runBot(account: (typeof bots)[number], index: number) {
           data: encodeFunctionData({ abi: RED_LIGHT_GREEN_BLOCK_ABI, functionName: "join", args: [] }),
           gas: JOIN_GAS_LIMIT,
         });
-        await publicClient.waitForTransactionReceipt({ hash });
+        // Check the STATUS, not just that a receipt exists. Counting a reverted join as a success
+        // made every subsequent step fail with NotJoined, which then showed up as 93 "missed
+        // windows" and sent me hunting a step-timing problem that did not exist.
+        const receipt = await publicClient.waitForTransactionReceipt({ hash });
+        if (receipt.status !== "success") {
+          stats.joinFailures++;
+          if (stats.joinFailures <= 3) {
+            const why = await joinRevertReason(account.address);
+            console.log(`  bot ${index} join REVERTED (${why ?? "unknown"}) in block ${receipt.blockNumber}`);
+          }
+          await new Promise(r => setTimeout(r, 700));
+          continue;
+        }
         joined = true;
         stats.joins++;
         lastActedBlock = block;
@@ -257,7 +372,7 @@ async function runBot(account: (typeof bots)[number], index: number) {
     // as fast as they are produced, so the observed number is routinely 1-2 blocks stale and a
     // window of +1 is often already in the past by the time the transaction is signed.
     const dash = Math.random() < DASH_RATE;
-    const lookahead = dash ? 12n : 6n;
+    const lookahead = dash ? 30n : 15n;
     const window = stepWindow(round.roundId, round.startBlock, block, block + lookahead);
 
     // Normally only step into a survivable window, but sometimes take the risk anyway, so the
@@ -302,7 +417,14 @@ async function runBot(account: (typeof bots)[number], index: number) {
           console.log(`  bot ${index} eliminated at step ${pos} (landed red in ${receipt.blockNumber})`);
         }
       } else {
-        stats.missedWindow++;
+        // A reverted receipt says nothing about WHY. Re-simulate the same call at the block it
+        // landed in to recover the custom error, rather than blaming the step window for every
+        // failure -- which is exactly what hid a round-expiry problem behind a plausible-looking
+        // "missed window" count.
+        const reason = await revertReason(account.address, block + lookahead);
+        if (reason === "RoundNotActive") stats.roundNotActive++;
+        else if (reason === "AlreadyActedThisBlock") stats.alreadyActed++;
+        else stats.missedWindow++;
       }
     } catch (error) {
       const text = String(error);
@@ -336,6 +458,8 @@ console.log(`steps landed green   ${stats.stepsLanded}`);
 console.log(`eliminated on red    ${stats.eliminated}`);
 console.log(`wins                 ${stats.wins}`);
 console.log(`missed window        ${stats.missedWindow}  (declined, player survives)`);
+console.log(`round not active     ${stats.roundNotActive}`);
+console.log(`rounds started       ${stats.roundsStarted}`);
 console.log(`already-acted revert ${stats.alreadyActed}`);
 console.log(`send errors          ${stats.sendErrors}`);
 console.log(`furthest position    ${Math.max(...results.map(r => r.pos))} / ${TRACK_LENGTH}`);
