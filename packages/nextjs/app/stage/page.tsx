@@ -121,6 +121,16 @@ export default function StagePage() {
   const players = [...feed.players.values()].sort((a, b) => b.pos - a.pos);
   const alive = players.filter(p => !p.eliminated);
   const dead = players.filter(p => p.eliminated);
+
+  // Joined count, taken as the larger of the live feed and the contract's own tally.
+  //
+  // The feed ticks the instant a Joined log is proposed, which is what makes the number climb
+  // visibly while a room is scanning. The contract count is polled every few seconds and lags, but
+  // it is authoritative and covers the case where the WebSocket dropped. Taking the max means the
+  // counter is never LOWER than the truth, which is the direction that matters when a presenter is
+  // narrating it to a room.
+  const joinedCount = Math.max(players.length, round?.playerCount ?? 0);
+  const scanning = round?.active === true && joinedCount < 5;
   const txThisBlock = feed.txPerBlock.find(b => b.blockNumber === blockNumber)?.count ?? 0;
   const peakTx = feed.txPerBlock.reduce((max, b) => Math.max(max, b.count), 0);
   const multiple = loadMultiple(peakTx, baseline);
@@ -190,9 +200,26 @@ export default function StagePage() {
         </div>
       </div>
 
-      {/* Counters: what the room cares about */}
-      <div className="mt-6 flex gap-10 text-center">
-        <Counter label="PLAYERS IN" value={alive.length} color={LIGHT.green} />
+      {/* Counters: what the room cares about.
+          PLAYERS IN is deliberately the largest number after the light itself. The riskiest
+          fifteen seconds of the pitch is the silence while people scan the QR, and a number
+          visibly climbing turns that dead air into momentum the presenter can narrate. */}
+      <div className="mt-6 flex items-end gap-10 text-center">
+        <div>
+          <div className="text-lg opacity-60">PLAYERS IN</div>
+          <div
+            className="font-mono text-8xl font-black leading-none tabular-nums transition-all"
+            style={{ color: joinedCount > 0 ? LIGHT.green : MONAD.lightPurple }}
+          >
+            {joinedCount}
+          </div>
+          {scanning && (
+            <div className="mt-1 animate-pulse text-sm" style={{ color: MONAD.cyan }}>
+              scan the QR to join
+            </div>
+          )}
+        </div>
+        <Counter label="ALIVE" value={alive.length} color={LIGHT.green} />
         <Counter label="ELIMINATED" value={dead.length} color={LIGHT.red} />
         <Counter label="ROUND" value={round?.roundId ?? 0} color={MONAD.lightPurple} />
         <div>

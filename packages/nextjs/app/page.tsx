@@ -52,8 +52,19 @@ export default function Home() {
       </div>
 
       <div className="text-center">
-        <Link href="/play" className="font-mono text-2xl font-bold underline" style={{ color: MONAD.cyan }}>
-          {playUrl ?? "/play"}
+        {/* The typeable URL, deliberately large and beside the QR.
+            Old phones and some camera apps simply refuse to scan a code, and a voter who cannot
+            get in is a voter who never plays. Showing the address in text is the fallback that
+            costs nothing. */}
+        <p className="text-sm uppercase tracking-widest" style={{ color: MONAD.lightPurple }}>
+          or type this in your browser
+        </p>
+        <Link
+          href="/play"
+          className="mt-1 block break-all font-mono text-3xl font-bold underline sm:text-4xl"
+          style={{ color: MONAD.cyan }}
+        >
+          {playUrl ? playUrl.replace(/^https?:\/\//, "") : "/play"}
         </Link>
         <p className="mt-3 max-w-xl opacity-70">
           Scan it. You get a throwaway wallet and testnet gas automatically — no wallet install, no signature prompts.
