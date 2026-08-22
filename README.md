@@ -241,21 +241,25 @@ it is kept out of the transaction pool entirely.
 Each of these was found the hard way, cost real time, and would have broken the demo in front of
 the room. They are the most useful thing in this repository.
 
-**1. `gasUsed` in a receipt equals the DECLARED limit, not the gas consumed.** Two independent
-confirmations:
+**1. You cannot size a gas limit from a Monad receipt — `gasUsed` reports what you DECLARED.**
 
-- Sending `join` with `gas = 2 × 118,819` produced a receipt reporting `gasUsed = 237,638` —
-  exactly double, because the declared limit was doubled.
-- The deploy transaction declared `gasLimit = 2,072,845` and its receipt reports
-  `gasUsed = 2,072,845`. Identical to the digit.
+The number you would naturally reach for is the number you yourself supplied. Three independent
+observations, only the first of which was constructed to prove anything:
 
-This means a loose limit is a real cost rather than harmless padding, and **a reverted transaction
-costs the full declared limit** — a failing call is exactly as expensive as a succeeding one.
+| Transaction | Declared `gasLimit` | Receipt `gasUsed` |
+|---|---|---|
+| `join`, sent deliberately with 2× the estimate | 237,638 | **237,638** |
+| The deploy | 2,072,845 | **2,072,845** |
+| An ordinary player `step` | 39,828 | **39,828** |
 
-It has a second consequence that is easy to miss: **you cannot read actual gas consumption off a
-Monad receipt at all.** `gasUsed` tells you what you declared, not what you spent computing. The
-only way to size a limit is `eth_estimateGas` before the fact, which is why every limit in this
-project comes from a live estimate rather than from a receipt.
+Identical to the digit, every time. So every limit has to come from `eth_estimateGas` **before the
+fact** — which is exactly why sizing them from Foundry measurements failed and cost two rounds of
+debugging (see finding 2).
+
+Two consequences follow. A loose limit is a real cost rather than harmless padding. And **a
+reverted transaction costs the full declared limit** — a failing call is exactly as expensive as a
+succeeding one, which is why the cheap `StepWindowMissed` path matters so much: declining a move
+costs the player almost nothing beyond the base fee.
 
 The real deploy cost, therefore: 2,072,845 gas at 103 gwei = **0.2135 MON** for a 9,284-byte
 runtime. Note that shrinking the contract would be the wrong optimisation — one deploy at ~2.07M
