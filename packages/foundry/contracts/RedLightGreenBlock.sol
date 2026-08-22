@@ -74,6 +74,19 @@ pragma solidity ^0.8.19;
  *         attributable entirely to the player's own decision. It also makes the wager an
  *         explicitly Monad-native one: you are betting on block inclusion timing.
  *
+ *      6. THE COST OF A MOVE IS PART OF THE DESIGN.
+ *         Monad charges for the DECLARED gas limit, not for gas used, so a wallet's habitual 1.5x
+ *         buffer is not free here — it is gas the player pays for and never consumes. Every
+ *         function in this contract is therefore kept to a predictable, measurable cost, events
+ *         carry no redundant fields, and `step()` writes one slot.
+ *
+ *         The client declares a tight limit derived from a measured worst case rather than an
+ *         estimate multiplied by a round number; see `MEASURED_STEP_GAS` in
+ *         `packages/nextjs/utils/red-light-green-block/gas.ts`. The worst case is the winning
+ *         step, which additionally writes `roundWinner` from zero and so costs materially more
+ *         than an ordinary step. Sizing the limit off a typical step would make exactly one
+ *         transaction per round fail: the one that wins it.
+ *
  *      No admin key, no owner, no upgradeability, no token/NFT/DeFi logic and no value transfers.
  *      `startRound()` is permissionless so the game can never stall waiting on an operator.
  *      This is unaudited testnet demo code.
@@ -83,8 +96,25 @@ contract RedLightGreenBlock {
                                 CONSTANTS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Steps required to win. A player wins on the step that takes `pos` to this value.
-    uint16 public constant TRACK_LENGTH = 100;
+    /**
+     * @notice Steps required to win. A player wins on the step that takes `pos` to this value.
+     *
+     * @dev 20, not 100, and the reason is economic as much as it is about pacing.
+     *
+     *      Monad charges for the DECLARED gas limit rather than gas used, and testnet base fee sat
+     *      at 100 gwei when this was measured (`eth_gasPrice` returned 102 gwei). Every step is a
+     *      real transaction, so a race is `players x steps` transactions and the cost scales with
+     *      the track length directly. At 100 steps, 50 players finishing would cost on the order
+     *      of 30 MON — and the official faucet dispenses 1 MON per wallet per day, with no larger
+     *      public source. A 100-step track is therefore not fundable for a demo; it would need
+     *      roughly a month of faucet collection to run once.
+     *
+     *      20 is also the better game. One step per block means 20 steps needs at least 20 green
+     *      blocks, and with the measured 52.3% green share a real race runs about 25-40 seconds.
+     *      That is short enough to run repeatedly in front of an audience and short enough for
+     *      somebody to walk up and play a whole round.
+     */
+    uint16 public constant TRACK_LENGTH = 20;
 
     /// @notice Length of one full green-then-red cycle, in blocks. At Monad's measured 300ms
     ///         cadence this is 12 seconds. A game-design constant, not a protocol parameter.
@@ -98,9 +128,19 @@ contract RedLightGreenBlock {
     ///      block; otherwise a cycle could be entirely green and there would be no risk in it.
     uint256 public constant MAX_GREEN_BLOCKS = 30;
 
-    /// @notice How long a round lasts, in blocks (1200 blocks = 6 minutes at 300ms). A round also
-    ///         ends the moment somebody wins.
-    uint256 public constant ROUND_LENGTH_BLOCKS = 1200;
+    /**
+     * @notice How long a round lasts, in blocks. 300 blocks = 91 seconds at the measured
+     *         304.8ms/block. A round also ends the instant somebody wins.
+     *
+     * @dev This is a backstop, not the expected length. A 20-step race is normally decided in
+     *      roughly 25-40 seconds, and a win ends the round immediately, so the deadline only binds
+     *      when the entire field is eliminated without a winner. In that case the room waits out
+     *      the remainder before anyone can call `startRound()` again.
+     *
+     *      Shortening it would make that dead time briefer but would also cut off a genuinely slow,
+     *      cautious finish. 300 was chosen as roughly three times a typical winning race.
+     */
+    uint256 public constant ROUND_LENGTH_BLOCKS = 300;
 
     /*
      * BLOCK NUMBER WIDTHS — stated rather than suppressed.

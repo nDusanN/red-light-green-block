@@ -17,7 +17,8 @@
     "postinstall": "shx cp -n .env.example .env",
     "lint": "make lint",
     "test": "forge test",
-    "verify": "make verify RPC_URL=${1:-localhost}"
+    "verify": "make verify RPC_URL=${1:-localhost}",
+    "light-fixture": "forge script script/GenerateLightFixture.s.sol"
   },
   "dependencies": {
     "dotenv": "~16.3.1",

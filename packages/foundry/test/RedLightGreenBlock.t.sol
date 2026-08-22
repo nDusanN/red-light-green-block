@@ -837,11 +837,44 @@ contract RedLightGreenBlockTest is Test {
         (,, uint48 endBlock) = game.round();
         vm.roll(uint256(endBlock) + 1);
         game.startRound();
+
+        // Join must be measured with a BRAND NEW address. Reusing an address that played a
+        // previous round overwrites a non-zero player slot (5,000 gas) instead of writing a fresh
+        // one (20,000), which understates the cost by enough to make a real join run out of gas.
+        vm.cool(address(game));
+        vm.prank(address(0xF1257));
+        before = gasleft();
+        game.join();
+        console.log("join, new addr, 1st of round (cold):", before - gasleft());
+
+        vm.prank(address(0xF1258));
+        game.join();
+        vm.cool(address(game));
+        vm.prank(address(0xF1259));
+        before = gasleft();
+        game.join();
+        console.log("join, new addr, mid-roster   (cold):", before - gasleft());
+
         vm.cool(address(game));
         vm.prank(alice);
         before = gasleft();
         game.join();
-        console.log("join, first of round  (cold):", before - gasleft());
+        console.log("join, returning player       (cold):", before - gasleft());
+
+        // The winning step is the worst case: it also writes `roundWinner` from zero, which is a
+        // fresh non-zero SSTORE. The declared gas limit has to cover THIS, not a typical step,
+        // otherwise the only transaction that fails all round is the one that wins it.
+        for (uint256 i = 0; i < game.TRACK_LENGTH() - 1; i++) {
+            _stepOnNextGreen(alice);
+        }
+        uint256 finalGreen = _nextGreen(block.number);
+        vm.roll(finalGreen);
+        vm.cool(address(game));
+        vm.prank(alice);
+        before = gasleft();
+        game.step(uint32(finalGreen));
+        console.log("step, WINNING step           (cold):", before - gasleft());
+        assertEq(game.roundWinner(), alice, "the measured step must actually be the winning one");
     }
 
     /**
