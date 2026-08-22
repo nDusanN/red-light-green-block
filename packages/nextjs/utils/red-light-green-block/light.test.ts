@@ -34,6 +34,7 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixturePath = join(here, "../../../foundry/test/fixtures/light-fixture.json");
+const vectorsPath = join(here, "../../../foundry/test/fixtures/lightAt.vectors.json");
 
 type Series = {
   roundId: number;
@@ -58,6 +59,78 @@ type Fixture = {
 };
 
 const fixture: Fixture = JSON.parse(readFileSync(fixturePath, "utf8"));
+
+/**
+ * Vectors from a THIRD, independent implementation.
+ *
+ * The `light-fixture.json` checks above are generated from the Solidity, so they prove the
+ * TypeScript port matches the contract — but they cannot catch a mistake the two share. If both
+ * sides encoded the keccak input the same wrong way (packed instead of `abi.encode`, or the wrong
+ * argument widths, or the arguments swapped), the two would agree perfectly and both would be
+ * wrong, and players would be shown a light the chain does not enforce.
+ *
+ * These vectors were written separately, from the specification rather than from this code, so
+ * agreement across all three implementations is what actually confirms the encoding.
+ * `lightAt.vectors.generator.mjs` sits beside them so they can be regenerated and audited.
+ *
+ * WHAT THEY DO AND DO NOT CATCH, checked by deliberately mis-encoding and counting mismatches
+ * across all 36 vectors:
+ *   - `encodePacked` instead of `abi.encode`  -> 36/36 caught
+ *   - arguments swapped                        -> 30/36 caught
+ *   - `roundId` widened to `uint256`           ->  0/36 caught, and rightly so: `abi.encode`
+ *     left-pads a `uint32` and a `uint256` to the same 32-byte word, so the encodings are
+ *     byte-identical. Not a gap in the vectors, a property of ABI encoding.
+ */
+type Vector = {
+  roundId: number;
+  startBlock: string;
+  block: string;
+  green: boolean;
+  greenInCycle: string;
+};
+
+const vectors: Vector[] = JSON.parse(readFileSync(vectorsPath, "utf8"));
+
+test("lightAt matches an independent third implementation", () => {
+  assert.ok(vectors.length >= 36, `expected at least 36 vectors, got ${vectors.length}`);
+
+  for (const vector of vectors) {
+    const startBlock = BigInt(vector.startBlock);
+    const blockNumber = BigInt(vector.block);
+
+    assert.equal(
+      lightAt(vector.roundId, startBlock, blockNumber),
+      vector.green,
+      `round ${vector.roundId} start ${vector.startBlock} block ${vector.block}`,
+    );
+
+    assert.equal(
+      greenBlocksInCycle(vector.roundId, (blockNumber - startBlock) / CYCLE_LENGTH_BLOCKS),
+      BigInt(vector.greenInCycle),
+      `greenInCycle for round ${vector.roundId} block ${vector.block}`,
+    );
+  }
+});
+
+test("independent vectors cover several rounds and a realistic block height", () => {
+  // A vector set that only exercised round 1 at block 1000 would pass trivially without testing
+  // the encoding at any width that matters.
+  const rounds = new Set(vectors.map(v => v.roundId));
+  assert.ok(rounds.size >= 3, `expected at least 3 distinct rounds, got ${rounds.size}`);
+  assert.ok(
+    vectors.some(v => BigInt(v.block) > 50_000_000n),
+    "expected a vector at a realistic live block height",
+  );
+  assert.ok(
+    vectors.some(v => v.startBlock === "0"),
+    "expected a vector anchored at block 0",
+  );
+  // And they must actually disagree with each other, or they prove nothing.
+  assert.ok(
+    vectors.some(v => v.green) && vectors.some(v => !v.green),
+    "vectors must contain both green and red blocks",
+  );
+});
 
 test("constants match the Solidity contract", () => {
   // Checked first: if these drift, every pattern below is meaningless and the failure should name

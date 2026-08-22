@@ -1,0 +1,254 @@
+[
+  {
+    "roundId": 1,
+    "startBlock": "1000",
+    "block": "1000",
+    "green": true,
+    "greenInCycle": "12"
+  },
+  {
+    "roundId": 1,
+    "startBlock": "1000",
+    "block": "1007",
+    "green": true,
+    "greenInCycle": "12"
+  },
+  {
+    "roundId": 1,
+    "startBlock": "1000",
+    "block": "1014",
+    "green": false,
+    "greenInCycle": "12"
+  },
+  {
+    "roundId": 1,
+    "startBlock": "1000",
+    "block": "1021",
+    "green": false,
+    "greenInCycle": "12"
+  },
+  {
+    "roundId": 1,
+    "startBlock": "1000",
+    "block": "1028",
+    "green": false,
+    "greenInCycle": "12"
+  },
+  {
+    "roundId": 1,
+    "startBlock": "1000",
+    "block": "1035",
+    "green": false,
+    "greenInCycle": "12"
+  },
+  {
+    "roundId": 1,
+    "startBlock": "1000",
+    "block": "1042",
+    "green": true,
+    "greenInCycle": "15"
+  },
+  {
+    "roundId": 1,
+    "startBlock": "1000",
+    "block": "1049",
+    "green": true,
+    "greenInCycle": "15"
+  },
+  {
+    "roundId": 1,
+    "startBlock": "1000",
+    "block": "1056",
+    "green": false,
+    "greenInCycle": "15"
+  },
+  {
+    "roundId": 1,
+    "startBlock": "1000",
+    "block": "1063",
+    "green": false,
+    "greenInCycle": "15"
+  },
+  {
+    "roundId": 1,
+    "startBlock": "1000",
+    "block": "1070",
+    "green": false,
+    "greenInCycle": "15"
+  },
+  {
+    "roundId": 1,
+    "startBlock": "1000",
+    "block": "1077",
+    "green": false,
+    "greenInCycle": "15"
+  },
+  {
+    "roundId": 2,
+    "startBlock": "55922506",
+    "block": "55922506",
+    "green": true,
+    "greenInCycle": "26"
+  },
+  {
+    "roundId": 2,
+    "startBlock": "55922506",
+    "block": "55922513",
+    "green": true,
+    "greenInCycle": "26"
+  },
+  {
+    "roundId": 2,
+    "startBlock": "55922506",
+    "block": "55922520",
+    "green": true,
+    "greenInCycle": "26"
+  },
+  {
+    "roundId": 2,
+    "startBlock": "55922506",
+    "block": "55922527",
+    "green": true,
+    "greenInCycle": "26"
+  },
+  {
+    "roundId": 2,
+    "startBlock": "55922506",
+    "block": "55922534",
+    "green": false,
+    "greenInCycle": "26"
+  },
+  {
+    "roundId": 2,
+    "startBlock": "55922506",
+    "block": "55922541",
+    "green": false,
+    "greenInCycle": "26"
+  },
+  {
+    "roundId": 2,
+    "startBlock": "55922506",
+    "block": "55922548",
+    "green": true,
+    "greenInCycle": "29"
+  },
+  {
+    "roundId": 2,
+    "startBlock": "55922506",
+    "block": "55922555",
+    "green": true,
+    "greenInCycle": "29"
+  },
+  {
+    "roundId": 2,
+    "startBlock": "55922506",
+    "block": "55922562",
+    "green": true,
+    "greenInCycle": "29"
+  },
+  {
+    "roundId": 2,
+    "startBlock": "55922506",
+    "block": "55922569",
+    "green": true,
+    "greenInCycle": "29"
+  },
+  {
+    "roundId": 2,
+    "startBlock": "55922506",
+    "block": "55922576",
+    "green": false,
+    "greenInCycle": "29"
+  },
+  {
+    "roundId": 2,
+    "startBlock": "55922506",
+    "block": "55922583",
+    "green": false,
+    "greenInCycle": "29"
+  },
+  {
+    "roundId": 7,
+    "startBlock": "0",
+    "block": "0",
+    "green": true,
+    "greenInCycle": "23"
+  },
+  {
+    "roundId": 7,
+    "startBlock": "0",
+    "block": "7",
+    "green": true,
+    "greenInCycle": "23"
+  },
+  {
+    "roundId": 7,
+    "startBlock": "0",
+    "block": "14",
+    "green": true,
+    "greenInCycle": "23"
+  },
+  {
+    "roundId": 7,
+    "startBlock": "0",
+    "block": "21",
+    "green": true,
+    "greenInCycle": "23"
+  },
+  {
+    "roundId": 7,
+    "startBlock": "0",
+    "block": "28",
+    "green": false,
+    "greenInCycle": "23"
+  },
+  {
+    "roundId": 7,
+    "startBlock": "0",
+    "block": "35",
+    "green": false,
+    "greenInCycle": "23"
+  },
+  {
+    "roundId": 7,
+    "startBlock": "0",
+    "block": "42",
+    "green": true,
+    "greenInCycle": "25"
+  },
+  {
+    "roundId": 7,
+    "startBlock": "0",
+    "block": "49",
+    "green": true,
+    "greenInCycle": "25"
+  },
+  {
+    "roundId": 7,
+    "startBlock": "0",
+    "block": "56",
+    "green": true,
+    "greenInCycle": "25"
+  },
+  {
+    "roundId": 7,
+    "startBlock": "0",
+    "block": "63",
+    "green": true,
+    "greenInCycle": "25"
+  },
+  {
+    "roundId": 7,
+    "startBlock": "0",
+    "block": "70",
+    "green": false,
+    "greenInCycle": "25"
+  },
+  {
+    "roundId": 7,
+    "startBlock": "0",
+    "block": "77",
+    "green": false,
+    "greenInCycle": "25"
+  }
+]

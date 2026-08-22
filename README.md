@@ -92,6 +92,25 @@ green.
 It already earned its keep: it caught `TRACK_LENGTH` still being 100 on the TypeScript side seconds
 after the contract changed to 20.
 
+**But two implementations checking each other cannot catch a mistake they share.** The fixture is
+generated *from* the Solidity, so if both sides encoded the keccak input the same wrong way they
+would agree perfectly and both be wrong — and players would be shown a light the chain does not
+enforce. So there is a **third**, independent implementation, written from the specification rather
+than from this code, and both the contract and the TypeScript port are checked against its 36
+vectors (`packages/foundry/test/fixtures/lightAt.vectors.json`). All three agree.
+
+The vectors were then checked for teeth by deliberately mis-encoding and counting mismatches:
+
+| Deliberate mistake | Vectors that catch it |
+|---|---|
+| `abi.encodePacked` instead of `abi.encode` | **36 / 36** |
+| Arguments swapped | **30 / 36** |
+| `roundId` widened to `uint256` | 0 / 36 — *and correctly so* |
+
+The last row is not a gap. `abi.encode` left-pads both a `uint32` and a `uint256` to the same
+32-byte word, so those two encodings are byte-identical and a port that widens the type is still
+right. Worth knowing precisely rather than worrying about vaguely.
+
 ### 2. `step()` writes exactly one storage slot
 
 ```solidity

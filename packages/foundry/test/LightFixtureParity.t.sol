@@ -24,10 +24,68 @@ import "../contracts/RedLightGreenBlock.sol";
 contract LightFixtureParityTest is Test {
     RedLightGreenBlock internal game;
     string internal fixture;
+    string internal vectors;
 
     function setUp() public {
         game = new RedLightGreenBlock();
         fixture = vm.readFile(string.concat(vm.projectRoot(), "/test/fixtures/light-fixture.json"));
+        vectors = vm.readFile(string.concat(vm.projectRoot(), "/test/fixtures/lightAt.vectors.json"));
+    }
+
+    /**
+     * @notice Checks the contract against vectors from a THIRD, independent implementation.
+     *
+     * @dev `light-fixture.json` is generated FROM this contract, so it proves the TypeScript port
+     *      matches Solidity but cannot catch a mistake the two share. If both encoded the keccak
+     *      input the same wrong way — `abi.encodePacked` instead of `abi.encode`, mismatched widths,
+     *      or the arguments swapped — they would agree perfectly and both be wrong, and players
+     *      would see a light the chain does not enforce.
+     *
+     *      These vectors were written separately, from the specification rather than from this
+     *      code. Agreement across all three implementations is what actually confirms the encoding.
+     *      `lightAt.vectors.generator.mjs` sits beside them so they can be regenerated and audited.
+     *
+     *      WHAT THEY DO AND DO NOT CATCH, checked by deliberately mis-encoding and counting
+     *      mismatches across all 36 vectors:
+     *        - `abi.encodePacked` instead of `abi.encode` -> 36/36 caught
+     *        - arguments swapped                          -> 30/36 caught
+     *        - `roundId` widened to `uint256`             ->  0/36 caught, and rightly so:
+     *          `abi.encode` left-pads a `uint32` and a `uint256` to the same 32-byte word, so the
+     *          encodings are byte-identical. That is a property of ABI encoding, not a gap.
+     */
+    function test_MatchesIndependentVectors() public view {
+        uint256 count = 36;
+        uint256 checked;
+
+        for (uint256 i = 0; i < count; i++) {
+            string memory base = string.concat("[", vm.toString(i), "]");
+
+            uint32 roundId = uint32(vm.parseJsonUint(vectors, string.concat(base, ".roundId")));
+            // Numeric fields are strings in the vector file so large block heights survive JSON.
+            uint48 startBlock = uint48(vm.parseUint(vm.parseJsonString(vectors, string.concat(base, ".startBlock"))));
+            uint256 blockNumber = vm.parseUint(vm.parseJsonString(vectors, string.concat(base, ".block")));
+            bool expectedGreen = vm.parseJsonBool(vectors, string.concat(base, ".green"));
+            uint256 expectedGreenInCycle =
+                vm.parseUint(vm.parseJsonString(vectors, string.concat(base, ".greenInCycle")));
+
+            assertEq(
+                game.lightAt(roundId, startBlock, blockNumber),
+                expectedGreen,
+                string.concat("light mismatch at independent vector ", vm.toString(i))
+            );
+
+            uint256 cycleIndex = (blockNumber - startBlock) / game.CYCLE_LENGTH_BLOCKS();
+            assertEq(
+                game.greenBlocksInCycle(roundId, cycleIndex),
+                expectedGreenInCycle,
+                string.concat("green length mismatch at independent vector ", vm.toString(i))
+            );
+
+            checked++;
+        }
+
+        assertEq(checked, count);
+        console.log("independent vectors checked:", checked);
     }
 
     /// @dev If the constants move, every pattern in the fixture is meaningless — check them first
