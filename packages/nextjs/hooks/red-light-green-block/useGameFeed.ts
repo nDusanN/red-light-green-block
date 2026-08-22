@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { type CommitState, commitRank } from "./useBlockClock";
 import { decodeEventLog } from "viem";
 import { RED_LIGHT_GREEN_BLOCK_ABI } from "~~/utils/red-light-green-block/abi";
+import { type CommitState, advanceCommit } from "~~/utils/red-light-green-block/commit";
 import { WEBSOCKET_URL } from "~~/utils/red-light-green-block/rpc";
 
 /**
@@ -188,9 +188,10 @@ export function useGameFeed(contractAddress: `0x${string}` | undefined, currentR
             return;
         }
 
-        // Commitment only ever advances.
-        if (commitRank(commit) > commitRank(next.commit)) next.commit = commit;
-        else if (existing && commitRank(commit) < commitRank(existing.commit)) next.commit = existing.commit;
+        // Commitment only ever advances. Observed live on testnet, one log from this contract was
+        // delivered Proposed -> Voted -> Finalized -> Verified, so taking the latest arrival would
+        // make a solid dot visibly fade back.
+        next.commit = advanceCommit(existing?.commit, commit);
 
         playersRef.current.set(player, next);
         setEventsSeen(n => n + 1);

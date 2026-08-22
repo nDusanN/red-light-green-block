@@ -105,6 +105,21 @@ function parseEndpointsFromEnv(varName = "NEXT_PUBLIC_RLGB_RPC_URLS"): RpcEndpoi
 /** The only endpoint that serves Monad's speculative `monadNewHeads` / `monadLogs` feeds. */
 export const WEBSOCKET_URL = "wss://testnet-rpc.monad.xyz";
 
+/**
+ * Maximum block span a single `eth_getLogs` call may cover.
+ *
+ * MEASURED: a wider range returns `{"code":-32614,"message":"eth_getLogs is limited to a 100
+ * range"}`. At 304.8ms per block that is **30 seconds of history**, which is far less than it
+ * sounds — any historical view has to page backwards in 100-block windows and cannot cheaply reach
+ * back more than a few minutes.
+ *
+ * This is why live state here comes from the `monadLogs` subscription and from contract reads
+ * rather than from log history: the roster is on-chain precisely so the field can be enumerated
+ * with one `eth_call` instead of a log scan that would need dozens of paged requests and still
+ * only see the recent past.
+ */
+export const MAX_GET_LOGS_RANGE = 100;
+
 export const MONAD_TESTNET_CHAIN_ID = 10143;
 
 export type RpcPoolOptions = {

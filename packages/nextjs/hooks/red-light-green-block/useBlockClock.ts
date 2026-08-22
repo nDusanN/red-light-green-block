@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { type CommitState, advanceCommit } from "~~/utils/red-light-green-block/commit";
 import { MEASURED_BLOCK_TIME_MS, WEBSOCKET_URL } from "~~/utils/red-light-green-block/rpc";
+
+export type { CommitState };
+export { COMMIT_ORDER, commitRank } from "~~/utils/red-light-green-block/commit";
 
 /**
  * The current block number, driven by Monad's WebSocket head feed.
@@ -25,14 +29,6 @@ import { MEASURED_BLOCK_TIME_MS, WEBSOCKET_URL } from "~~/utils/red-light-green-
  * rejects them on the free plan and monadinfra refuses the connection outright — so there is no
  * failover here, only a fallback to HTTP polling.
  */
-
-export type CommitState = "Proposed" | "Voted" | "Verified" | "Finalized";
-
-export const COMMIT_ORDER: CommitState[] = ["Proposed", "Voted", "Verified", "Finalized"];
-
-export function commitRank(state: CommitState | undefined): number {
-  return state ? COMMIT_ORDER.indexOf(state) : -1;
-}
 
 export type BlockClock = {
   /** Highest block seen, at any commitment level. This is the game clock. */
@@ -121,11 +117,8 @@ export function useBlockClock(httpFallbackPoll?: () => Promise<bigint>): BlockCl
 
         if (commitState) {
           const key = number.toString();
-          const existing = commitRef.current.get(key);
-          // Never move a block backwards: messages are not guaranteed to arrive in order.
-          if (commitRank(commitState) > commitRank(existing)) {
-            commitRef.current.set(key, commitState);
-          }
+          // Never move a block backwards. Observed live: Finalized can arrive BEFORE Verified.
+          commitRef.current.set(key, advanceCommit(commitRef.current.get(key), commitState));
           if (commitState === "Finalized") {
             setFinalizedBlock(prev => (prev === undefined || number > prev ? number : prev));
           }

@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { decodeFunctionResult, encodeFunctionData } from "viem";
-import { type CommitState, useBlockClock } from "~~/hooks/red-light-green-block/useBlockClock";
+import { useBlockClock } from "~~/hooks/red-light-green-block/useBlockClock";
 import { useGameFeed } from "~~/hooks/red-light-green-block/useGameFeed";
 import { RED_LIGHT_GREEN_BLOCK_ABI } from "~~/utils/red-light-green-block/abi";
+import { COMMIT_LABEL, COMMIT_OPACITY } from "~~/utils/red-light-green-block/commit";
 import { type RoundInfo, gameAddress } from "~~/utils/red-light-green-block/contract";
 import { TRACK_LENGTH, blocksUntilLightChange, lightAt } from "~~/utils/red-light-green-block/light";
 import { MEASURED_BLOCK_TIME_MS, RpcPool } from "~~/utils/red-light-green-block/rpc";
@@ -22,21 +23,6 @@ import { MEASURED_BLOCK_TIME_MS, RpcPool } from "~~/utils/red-light-green-block/
  * `Finalized`. That is not decoration: a proposed move genuinely is less certain than a finalized
  * one, and drawing the difference is more honest than the usual spinner that hides it.
  */
-
-/** Opacity per commitment level: speculative is see-through, settled is solid. */
-const COMMIT_OPACITY: Record<CommitState, number> = {
-  Proposed: 0.3,
-  Voted: 0.55,
-  Verified: 0.8,
-  Finalized: 1,
-};
-
-const COMMIT_LABEL: Record<CommitState, string> = {
-  Proposed: "proposed",
-  Voted: "voted",
-  Verified: "verified",
-  Finalized: "final",
-};
 
 export default function StagePage() {
   const pool = useMemo(() => new RpcPool(), []);

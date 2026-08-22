@@ -384,6 +384,144 @@ contract RedLightGreenBlockTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
+                    LATE JOINING — THE PITCH-CRITICAL PATH
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev When a room scans the QR code during a three-minute pitch, everyone must be able to
+     *      start playing IMMEDIATELY rather than waiting for a round boundary. A newcomer who has
+     *      to wait even 30 seconds is a voter who never plays.
+     *
+     *      There is no separate "late join" mechanism, and deliberately so: `join()` only requires
+     *      that a round is active, so joining at block 1 and joining at block 299 are the same
+     *      code path. These tests exist because that property is load-bearing for the demo and
+     *      would be easy for a future change to break without noticing.
+     */
+    function test_LateJoin_MidRoundStartsAtZeroAndPlaysImmediately() public {
+        _startAndJoin(alice);
+
+        // Alice gets a long head start.
+        for (uint256 i = 0; i < 5; i++) {
+            _stepOnNextGreen(alice);
+        }
+        (, uint16 alicePos,,) = game.getPlayer(alice);
+        assertEq(alicePos, 5);
+
+        // Bob walks up mid-round and joins.
+        vm.prank(bob);
+        game.join();
+
+        (bool joined, uint16 bobPos, bool eliminated,) = game.getPlayer(bob);
+        assertTrue(joined, "a newcomer must be able to join a running round");
+        assertEq(bobPos, 0, "and starts at the beginning, disadvantaged but playing");
+        assertFalse(eliminated);
+
+        // And can step on the very next green block, with no waiting period.
+        _stepOnNextGreen(bob);
+        (, bobPos,,) = game.getPlayer(bob);
+        assertEq(bobPos, 1);
+    }
+
+    function test_LateJoin_WorksOnTheFinalBlockOfARound() public {
+        game.startRound();
+        (,, uint48 endBlock) = game.round();
+
+        // The last possible moment. Joining must still work rather than reverting on an
+        // off-by-one, because a player who taps as the round expires should get a clean outcome.
+        vm.roll(uint256(endBlock));
+        vm.prank(alice);
+        game.join();
+
+        (bool joined,,,) = game.getPlayer(alice);
+        assertTrue(joined);
+    }
+
+    function test_LateJoin_RejectedOnceTheRoundHasEnded() public {
+        game.startRound();
+        (,, uint48 endBlock) = game.round();
+
+        vm.roll(uint256(endBlock) + 1);
+        vm.expectRevert(RedLightGreenBlock.RoundNotActive.selector);
+        vm.prank(alice);
+        game.join();
+    }
+
+    function test_LateJoin_RejectedAfterSomebodyHasWon() public {
+        _startAndJoin(alice);
+        for (uint256 i = 0; i < game.TRACK_LENGTH(); i++) {
+            _stepOnNextGreen(alice);
+        }
+        assertEq(game.roundWinner(), alice);
+
+        // The round is over the instant it is won, so a join now belongs to the next round.
+        vm.expectRevert(RedLightGreenBlock.RoundNotActive.selector);
+        vm.prank(bob);
+        game.join();
+    }
+
+    /**
+     * @dev The pitch moment: a whole room arrives at once, mid-round. This is also the worst case
+     *      for the roster's shared length slot, which is the one contended write in the contract.
+     */
+    function test_LateJoin_WholeRoomArrivesMidRound() public {
+        _startAndJoin(alice);
+        _stepOnNextGreen(alice);
+        _stepOnNextGreen(alice);
+
+        uint160 roomSize = 50;
+        for (uint160 i = 1; i <= roomSize; i++) {
+            address newcomer = address(0x10000 + i);
+            vm.prank(newcomer);
+            game.join();
+        }
+
+        assertEq(game.rosterLength(1), roomSize + 1, "everyone who arrived is on the roster");
+
+        // Every one of them is genuinely playable, not merely recorded.
+        address[] memory addrs = new address[](roomSize);
+        for (uint160 i = 1; i <= roomSize; i++) {
+            addrs[i - 1] = address(0x10000 + i);
+        }
+        RedLightGreenBlock.PlayerView[] memory views = game.getPlayers(addrs);
+        for (uint256 i = 0; i < views.length; i++) {
+            assertTrue(views[i].joined, "every newcomer must be joined");
+            assertEq(views[i].pos, 0);
+            assertFalse(views[i].eliminated);
+        }
+
+        // And a newcomer can immediately step, in the same block as everyone else.
+        uint256 green = _nextGreen(block.number);
+        vm.roll(green);
+        for (uint160 i = 1; i <= 5; i++) {
+            vm.prank(address(0x10000 + i));
+            game.step(uint32(green));
+        }
+        (, uint16 pos,,) = game.getPlayer(address(0x10001));
+        assertEq(pos, 1);
+
+        // The head start is intact: arriving late costs position, not the ability to play.
+        (, uint16 alicePos,,) = game.getPlayer(alice);
+        assertEq(alicePos, 2);
+    }
+
+    /// @dev A latecomer can still win outright; joining late is a handicap, not a disqualification.
+    function test_LateJoin_LatecomerCanStillWin() public {
+        _startAndJoin(alice);
+        _stepOnNextGreen(alice);
+
+        vm.prank(bob);
+        game.join();
+
+        for (uint256 i = 0; i < game.TRACK_LENGTH(); i++) {
+            _stepOnNextGreen(bob);
+        }
+
+        assertEq(game.roundWinner(), bob);
+        (, uint16 bobPos,,) = game.getPlayer(bob);
+        assertEq(bobPos, game.TRACK_LENGTH());
+    }
+
+    /*//////////////////////////////////////////////////////////////
                             WINNING A ROUND
     //////////////////////////////////////////////////////////////*/
 
