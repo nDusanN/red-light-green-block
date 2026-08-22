@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type Account, createWalletClient, custom, encodeFunctionData } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import { monadTestnet } from "viem/chains";
+import { detectChain } from "~~/utils/red-light-green-block/chain";
 import { RED_LIGHT_GREEN_BLOCK_ABI } from "~~/utils/red-light-green-block/contract";
 import { RpcPool } from "~~/utils/red-light-green-block/rpc";
 
@@ -131,7 +131,7 @@ export function useBurner(pool: RpcPool) {
 
       const client = createWalletClient({
         account,
-        chain: monadTestnet,
+        chain: await detectChain(pool),
         transport: custom({
           request: ({ method, params }) => pool.call(method, (params ?? []) as unknown[]),
         }),

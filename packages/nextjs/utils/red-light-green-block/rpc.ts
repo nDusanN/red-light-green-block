@@ -41,12 +41,40 @@ export type RpcEndpoint = {
 /**
  * Weighted by measured burst tolerance, not by preference. drpc absorbed 60/60 concurrent
  * requests; monad.xyz started rejecting at around 50 per window.
+ *
+ * Override with `NEXT_PUBLIC_RLGB_RPC_URLS`, a comma-separated list, optionally with weights:
+ *
+ *   NEXT_PUBLIC_RLGB_RPC_URLS="https://my-paid-endpoint@10,https://testnet-rpc.monad.xyz@1"
+ *
+ * This is how a paid Alchemy or QuickNode key gets used, which is the real fix for the per-IP
+ * limit. It is also how the whole stack gets pointed at a local Anvil for testing.
  */
-export const DEFAULT_HTTP_ENDPOINTS: RpcEndpoint[] = [
+export const DEFAULT_HTTP_ENDPOINTS: RpcEndpoint[] = parseEndpointsFromEnv() ?? [
   { url: "https://monad-testnet.drpc.org", weight: 5 },
   { url: "https://testnet-rpc.monad.xyz", weight: 3 },
   { url: "https://rpc.ankr.com/monad_testnet", weight: 2 },
 ];
+
+function parseEndpointsFromEnv(): RpcEndpoint[] | undefined {
+  const raw = process.env.NEXT_PUBLIC_RLGB_RPC_URLS;
+  if (!raw) return undefined;
+
+  const endpoints = raw
+    .split(",")
+    .map(entry => entry.trim())
+    .filter(Boolean)
+    .map(entry => {
+      const at = entry.lastIndexOf("@");
+      // Only treat a trailing `@n` as a weight; URLs can legitimately contain `@` in credentials.
+      if (at > 0 && /^\d+$/.test(entry.slice(at + 1))) {
+        return { url: entry.slice(0, at), weight: Number(entry.slice(at + 1)) };
+      }
+      return { url: entry, weight: 1 };
+    })
+    .filter(endpoint => endpoint.weight > 0);
+
+  return endpoints.length > 0 ? endpoints : undefined;
+}
 
 /** The only endpoint that serves Monad's speculative `monadNewHeads` / `monadLogs` feeds. */
 export const WEBSOCKET_URL = "wss://testnet-rpc.monad.xyz";

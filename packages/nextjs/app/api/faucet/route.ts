@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createWalletClient, custom, formatEther, isAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { monadTestnet } from "viem/chains";
 import { INITIAL_FUNDED_STEPS, targetBurnerBalanceWei, topUpAmountWei } from "~~/utils/red-light-green-block/budget";
+import { detectChain } from "~~/utils/red-light-green-block/chain";
 import { RpcPool } from "~~/utils/red-light-green-block/rpc";
 
 /**
@@ -142,7 +142,7 @@ export async function POST(request: NextRequest) {
 
       const client = createWalletClient({
         account,
-        chain: monadTestnet,
+        chain: await detectChain(pool),
         transport: custom({
           request: ({ method, params }) => pool.call(method, (params ?? []) as unknown[]),
         }),
