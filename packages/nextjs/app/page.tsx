@@ -18,6 +18,7 @@ import { LIGHT, MONAD } from "~~/utils/red-light-green-block/theme";
 export default function Home() {
   const [playUrl, setPlayUrl] = useState<string>();
   const address = gameAddress();
+  const shortUrl = process.env.NEXT_PUBLIC_RLGB_SHORT_URL;
 
   useEffect(() => {
     setPlayUrl(`${window.location.origin}/play`);
@@ -52,17 +53,34 @@ export default function Home() {
       </div>
 
       <div className="text-center">
-        {/* The typeable URL, deliberately large and beside the QR.
-            Old phones and some camera apps simply refuse to scan a code, and a voter who cannot
-            get in is a voter who never plays. Showing the address in text is the fallback that
-            costs nothing. */}
-        <p className="text-sm uppercase tracking-widest" style={{ color: MONAD.lightPurple }}>
-          or type this in your browser
-        </p>
+        {/* Three tiers, deliberately in this order.
+            The QR above is the real path. Old phones and some camera apps refuse to scan, and a
+            voter who cannot get in is a voter who never plays, so there are two text fallbacks.
+
+            The short link is a THIRD-PARTY dependency sitting in the middle of the demo path. It
+            was verified to resolve (one redirect, HTTP 200, ~1.4s versus ~120ms direct), but if
+            that service is slow or down the link is dead — so it is labelled as a fallback, never
+            the primary route, and the full address stays visible beneath it so nothing depends on
+            a shortener alone. Set NEXT_PUBLIC_RLGB_SHORT_URL to change it, or leave it unset to
+            drop the dependency entirely. */}
+        {shortUrl && (
+          <>
+            <p className="text-sm uppercase tracking-widest" style={{ color: MONAD.lightPurple }}>
+              or type this
+            </p>
+            <a
+              href={shortUrl}
+              className="mt-1 block font-mono text-4xl font-bold underline sm:text-5xl"
+              style={{ color: MONAD.cyan }}
+            >
+              {shortUrl.replace(/^https?:\/\//, "")}
+            </a>
+          </>
+        )}
         <Link
           href="/play"
-          className="mt-1 block break-all font-mono text-3xl font-bold underline sm:text-4xl"
-          style={{ color: MONAD.cyan }}
+          className="mt-2 block break-all font-mono text-sm underline opacity-60"
+          style={{ color: MONAD.lightPurple }}
         >
           {playUrl ? playUrl.replace(/^https?:\/\//, "") : "/play"}
         </Link>
