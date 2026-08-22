@@ -35,4 +35,4 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
-ipfs-upload.config.json
+ipfs-upload.config.json*.tmp.ts
