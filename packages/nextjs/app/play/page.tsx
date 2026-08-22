@@ -27,8 +27,31 @@ import { MEASURED_BLOCK_TIME_MS, RpcPool } from "~~/utils/red-light-green-block/
  *    is informed rather than a gamble.
  */
 
-const SAFE_LOOKAHEAD = 1n;
-const DASH_LOOKAHEAD = 4n;
+/**
+ * How far ahead each button lets the transaction execute.
+ *
+ * MEASURED, and the first values were wrong. With SAFE at 1 the game was unplayable on a phone:
+ * every tap came back "missed the window". A client cannot observe blocks as fast as they are
+ * produced -- polling `eth_blockNumber` in a tight loop for 9 seconds saw 27 transitions with gaps
+ * of min 57ms / p50 309ms / max 612ms against a true 300ms block time, so the observed block
+ * number is routinely one to two blocks stale before signing even begins.
+ *
+ * `maxBlock = observed + 1` therefore often names a block that is already in the past, and the
+ * contract correctly refuses to execute. The mechanism was working exactly as designed; the
+ * numbers were simply not physical.
+ *
+ * Tuned from measured click-to-inclusion against the deployed contract, not guessed: send-to-
+ * receipt was p50 945ms and p90 1259ms, which at 304.8ms/block is 3.1 and 4.1 blocks. SAFE is set
+ * above the p90 so an honest "you cannot die" actually holds; an intermediate value of 3 was tried
+ * and still missed most windows.
+ *
+ * This does not soften the game. SAFE still means "every block I could land in is green, so I
+ * cannot die" -- it just needs six green blocks ahead rather than one, and the UI draws every one
+ * of them so the guarantee stays visible and checkable. Green runs are 12-30 blocks, so a SAFE
+ * step is available for most of every green phase. DASH still reaches past what can be seen.
+ */
+const SAFE_LOOKAHEAD = 6n;
+const DASH_LOOKAHEAD = 12n;
 
 type Outcome = {
   kind: "stepped" | "eliminated" | "missed" | "error" | "pending";
@@ -50,6 +73,12 @@ export default function PlayPage() {
   const [latency, setLatency] = useState<{ p50Ms: number; blocks: number }>();
   const [netWarning, setNetWarning] = useState<string>();
   const lastActedBlock = useRef<bigint | undefined>(undefined);
+  /** Freshest observed block, updated every tick so a press never uses a stale render value. */
+  const clockRef = useRef<bigint | undefined>(undefined);
+  const sentAtBlock = useRef<bigint | undefined>(undefined);
+  /** Click-to-inclusion, in blocks. Measured so SAFE_LOOKAHEAD can be tuned from data. */
+  const [inclusionBlocks, setInclusionBlocks] = useState<number[]>([]);
+  const consecutiveMisses = useRef(0);
 
   // One eth_call to pick up the round anchor. After this the light is entirely local.
   const refreshRound = useCallback(async () => {
@@ -121,6 +150,7 @@ export default function PlayPage() {
   }, [burner.ready, pool]);
 
   const blockNumber = clock.blockNumber;
+  clockRef.current = blockNumber;
   const isGreen = round && blockNumber ? lightAt(round.roundId, round.startBlock, blockNumber) : undefined;
   const blocksLeft =
     round && blockNumber ? blocksUntilLightChange(round.roundId, round.startBlock, blockNumber) : undefined;
@@ -146,8 +176,12 @@ export default function PlayPage() {
           hash = await burner.send({ to: address, functionName: "join", gas: JOIN_GAS_LIMIT });
         } else {
           const lookahead = kind === "safe" ? SAFE_LOOKAHEAD : DASH_LOOKAHEAD;
-          const maxBlock = blockNumber + lookahead;
-          lastActedBlock.current = blockNumber;
+          // Read the clock again at press time. React state can be a render behind, and at 305ms
+          // blocks one stale render is a whole block of the window thrown away.
+          const freshest = clockRef.current ?? blockNumber;
+          const maxBlock = freshest + lookahead;
+          lastActedBlock.current = freshest;
+          sentAtBlock.current = freshest;
           hash = await burner.send({
             to: address,
             functionName: "step",
@@ -167,10 +201,23 @@ export default function PlayPage() {
           if (receipt.status === "0x1") {
             // A successful step is NOT necessarily a successful move: landing on red succeeds and
             // eliminates you. The contract cannot revert there, so the state has to be re-read.
+            consecutiveMisses.current = 0;
+            if (sentAtBlock.current && receipt.blockNumber) {
+              const distance = Number(BigInt(receipt.blockNumber) - sentAtBlock.current);
+              setInclusionBlocks(prev => [...prev.slice(-19), distance]);
+            }
             await Promise.all([refreshMe(), refreshRound()]);
             setOutcome({ kind: "stepped", text: "landed", at: Date.now() });
           } else {
-            setOutcome({ kind: "missed", text: "missed the window — still alive", at: Date.now() });
+            consecutiveMisses.current++;
+            setOutcome({
+              kind: "missed",
+              text:
+                consecutiveMisses.current >= 2
+                  ? "your connection is slow — try DASH"
+                  : "missed the window — still alive",
+              at: Date.now(),
+            });
           }
           break;
         }
@@ -234,7 +281,10 @@ export default function PlayPage() {
         <span>block {blockNumber?.toString() ?? "…"}</span>
         <span>
           {clock.source === "websocket" ? "live feed" : clock.source === "http" ? "polling" : "connecting"}
-          {latency ? ` · ping ${latency.p50Ms}ms ≈ ${latency.blocks} blocks` : ""}
+          {latency ? ` · ping ${latency.p50Ms}ms ≈ ${latency.blocks} blk` : ""}
+          {inclusionBlocks.length > 0
+            ? ` · lands +${Math.round(inclusionBlocks.reduce((a, b) => a + b, 0) / inclusionBlocks.length)} blk`
+            : ""}
         </span>
       </div>
 

@@ -19,7 +19,7 @@
 import { RED_LIGHT_GREEN_BLOCK_ABI } from "../utils/red-light-green-block/abi.ts";
 import { JOIN_GAS_LIMIT, START_ROUND_GAS_LIMIT, stepGasLimit } from "../utils/red-light-green-block/gas.ts";
 import { TRACK_LENGTH, lightAt, stepWindow } from "../utils/red-light-green-block/light.ts";
-import { DEFAULT_HTTP_ENDPOINTS, RpcPool } from "../utils/red-light-green-block/rpc.ts";
+import { RpcPool } from "../utils/red-light-green-block/rpc.ts";
 import {
   createPublicClient,
   createWalletClient,
@@ -64,12 +64,24 @@ if (!ADDRESS || !FUNDER) {
   process.exit(1);
 }
 
-/** A local single node has no pool to spread across; a testnet run uses the full weighted pool. */
+/**
+ * A local single node has no pool to spread across. A testnet run uses the pool's own defaults,
+ * which deliberately split sends from reads -- passing an explicit endpoint list here would
+ * override that split and send eth_call to drpc, which refuses every one of them.
+ */
 const isLocal = RPC.includes("127.0.0.1") || RPC.includes("localhost");
-const pool = new RpcPool({
-  endpoints: isLocal ? [{ url: RPC, weight: 1 }] : DEFAULT_HTTP_ENDPOINTS,
-  maxAttempts: 6,
-});
+const pool = isLocal
+  ? new RpcPool({ endpoints: [{ url: RPC, weight: 1 }], maxAttempts: 6 })
+  : new RpcPool({ maxAttempts: 6 });
+
+/**
+ * Separate pool for the funding loop, pinned to one endpoint.
+ *
+ * The funder assigns its own sequential nonces, and endpoints do not share a mempool, so
+ * round-robining a nonce run leaves every host with a sequence it cannot complete. Bots then fail
+ * with "Signer had insufficient balance" -- a symptom that points at the wrong thing entirely.
+ */
+const funderPool = isLocal ? pool : new RpcPool({ maxAttempts: 6, pinSends: true });
 
 const transport = custom({ request: ({ method, params }) => pool.call(method, (params ?? []) as unknown[]) });
 // pollingInterval matters for the numbers this script prints. viem defaults to 4000ms, which on a
@@ -104,7 +116,10 @@ const chain = defineChain({
 });
 
 const funder = privateKeyToAccount(FUNDER);
-const funderClient = createWalletClient({ account: funder, transport, chain });
+const funderTransport = custom({
+  request: ({ method, params }) => funderPool.call(method, (params ?? []) as unknown[]),
+});
+const funderClient = createWalletClient({ account: funder, transport: funderTransport, chain });
 
 async function readRound() {
   const raw = await pool.ethCall(
@@ -134,18 +149,49 @@ const gasPrice = await pool.gasPrice();
 const fundEach = (JOIN_GAS_LIMIT + BigInt(TRACK_LENGTH) * stepGasLimit(0, TRACK_LENGTH)) * gasPrice * 2n;
 
 console.log(`funding ${BOTS} bots with ${formatEther(fundEach)} MON each...`);
-let nonce = await pool.transactionCount(funder.address, "pending");
-let lastFundHash: `0x${string}` | undefined;
+// Each funding transaction is awaited AND its status checked before the next is sent.
+//
+// Two separate traps here, both of which silently produced unfunded wallets:
+//   1. Firing them back to back is what a 305ms chain invites, but on real Monad testnet only the
+//      first reliably lands; the rest are mined with status 0. Measured: rapid 1-2/4, awaited 4/4.
+//   2. viem's waitForTransactionReceipt resolves on a REVERTED receipt just as happily as a
+//      successful one. Awaiting it without checking `status` looks like careful code and proves
+//      nothing at all.
 for (const bot of bots) {
-  lastFundHash = await funderClient.sendTransaction({
-    to: bot.address,
-    value: fundEach,
-    gas: 21_000n,
-    nonce: nonce++,
-  });
+  let funded = false;
+  for (let attempt = 1; attempt <= 3 && !funded; attempt++) {
+    // Re-read the nonce each attempt rather than tracking it locally: after a failure the local
+    // value and the chain's can disagree, and a wrong nonce fails the next several sends too.
+    const nonce = await funderPool.transactionCount(funder.address, "pending");
+    const hash = await funderClient.sendTransaction({
+      to: bot.address,
+      value: fundEach,
+      gas: 21_000n,
+      nonce,
+    });
+    const receipt = await publicClient.waitForTransactionReceipt({ hash });
+    funded = receipt.status === "success";
+    if (!funded) console.log(`  funding ${bot.address.slice(0, 10)} attempt ${attempt} reverted, retrying`);
+  }
+  if (!funded) console.log(`  WARNING: could not fund ${bot.address}`);
 }
-if (lastFundHash) await publicClient.waitForTransactionReceipt({ hash: lastFundHash });
-console.log("funded.");
+
+// Verify rather than assume. Awaiting only the last funding receipt is not proof the others
+// landed, and a bot that starts unfunded fails later with "Signer had insufficient balance" --
+// which points at the wrong thing entirely and cost real time to chase.
+const fundDeadline = Date.now() + 30_000;
+let fundedCount = 0;
+while (Date.now() < fundDeadline) {
+  const balances = await Promise.all(bots.map(bot => pool.balance(bot.address).catch(() => 0n)));
+  fundedCount = balances.filter(b => b > 0n).length;
+  if (fundedCount === bots.length) break;
+  await new Promise(r => setTimeout(r, 1000));
+}
+if (fundedCount !== bots.length) {
+  console.error(`FUNDING FAILED: only ${fundedCount}/${bots.length} bots have a balance. Aborting.`);
+  process.exit(1);
+}
+console.log(`funded and verified: ${fundedCount}/${bots.length}`);
 
 // ---- Make sure a round is live -----------------------------------------
 let round = await readRound();
@@ -199,15 +245,19 @@ async function runBot(account: (typeof bots)[number], index: number) {
         lastActedBlock = block;
       } catch (error) {
         stats.joinFailures++;
-        if (!/AlreadyJoined/i.test(String(error))) console.log(`  bot ${index} join failed: ${error}`);
+        if (!/AlreadyJoined/i.test(String(error)))
+          console.log(`  bot ${index} join failed: ${String(error).slice(0, 700)}`);
         joined = true;
       }
       continue;
     }
 
     // A bot plays the way we want a human to: it looks at the window before choosing.
+    // Same lookaheads the phone UI uses. 1 and 4 were unplayable: a client cannot observe blocks
+    // as fast as they are produced, so the observed number is routinely 1-2 blocks stale and a
+    // window of +1 is often already in the past by the time the transaction is signed.
     const dash = Math.random() < DASH_RATE;
-    const lookahead = dash ? 4n : 1n;
+    const lookahead = dash ? 12n : 6n;
     const window = stepWindow(round.roundId, round.startBlock, block, block + lookahead);
 
     // Normally only step into a survivable window, but sometimes take the risk anyway, so the
@@ -260,7 +310,7 @@ async function runBot(account: (typeof bots)[number], index: number) {
       else if (/AlreadyActedThisBlock/i.test(text)) stats.alreadyActed++;
       else {
         stats.sendErrors++;
-        if (stats.sendErrors < 5) console.log(`  bot ${index} send error: ${text.slice(0, 140)}`);
+        if (stats.sendErrors < 3) console.log(`  bot ${index} send error: ${text.slice(0, 700)}`);
       }
     }
   }

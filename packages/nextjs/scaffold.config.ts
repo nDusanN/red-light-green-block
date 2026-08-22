@@ -12,8 +12,12 @@ export type ScaffoldConfig = {
 export const DEFAULT_ALCHEMY_API_KEY = "oKxs-03sij-U_N0iOlrSsZFr29-IqbuF";
 
 const scaffoldConfig = {
-  // The networks on which your DApp is live
-  targetNetworks: [chains.foundry, chains.monadTestnet],
+  // The networks on which your DApp is live.
+  //
+  // Monad testnet ONLY. Listing chains.foundry first made Scaffold-ETH treat local Anvil as the
+  // primary target, so every visitor was greeted with "Cannot connect to local provider -- did you
+  // forget to run yarn chain?" before they saw the game. The Foundry tests do not read this config.
+  targetNetworks: [chains.monadTestnet],
 
   // The interval at which your front-end polls the RPC servers for new data
   // it has no effect if you only target the local network (default is 4000)

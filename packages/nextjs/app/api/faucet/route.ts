@@ -24,11 +24,32 @@ import { RpcPool } from "~~/utils/red-light-green-block/rpc";
  *   2. Refuse when the wallet can no longer fund a whole player, and say so. A wallet that dies
  *      mid-race in front of the room is worse than a clean refusal.
  *
- * NONCE DISCIPLINE. Several people scan the QR at once, so requests arrive concurrently. Two sends
- * that read the nonce at the same time would both use it and one would be dropped. Every send is
- * therefore serialised through a single in-process promise chain and the nonce is tracked locally
- * rather than re-read per request. Receipts are deliberately NOT awaited between sends: at ~305ms
- * blocks, waiting would serialise onboarding into one player per block for no benefit.
+ * NONCE DISCIPLINE, AND WHY IT WAITS. Several people scan the QR at once, so requests arrive
+ * concurrently. Two sends that read the nonce at the same time would both use it and one would be
+ * dropped. Every send is therefore serialised through a single in-process promise chain, with the
+ * nonce tracked locally rather than re-read per request.
+ *
+ * This route also WAITS for each transaction to be mined before releasing the next one, which is
+ * the opposite of what seemed obviously right. Firing them back to back and letting ~305ms blocks
+ * absorb them is what a fast chain invites you to do, and on Anvil it worked perfectly: 12
+ * concurrent requests, 12 wallets funded, 0.79s.
+ *
+ * On real Monad testnet it does not work. Measured, four transfers from one funded account:
+ *
+ *     rapid fire, EIP-1559        2/4 succeeded
+ *     rapid fire, legacy gasPrice 1/4 succeeded
+ *     400ms spacing               3/4 succeeded
+ *     awaiting each receipt       4/4 succeeded
+ *
+ * The failures are not rejections. They are mined, consume the full 21,000 intrinsic gas, and come
+ * back with status 0. viem reports the earlier ones as "Signer had insufficient balance", which is
+ * misleading -- the sender held over 3 MON against a 0.0026 MON reservation.
+ *
+ * The root cause is in the node's handling of several in-flight transactions from one account and
+ * is not something this code can see from outside, so it is not guessed at here. What IS measured
+ * is that waiting is reliable and not waiting is not. Throughput drops to roughly one wallet per
+ * second, which is acceptable: a 50-person room onboards in under a minute, and a player who gets
+ * a working wallet slowly is infinitely better than one who gets a silently broken wallet fast.
  */
 
 export const dynamic = "force-dynamic";
@@ -41,7 +62,11 @@ const HOT_WALLET_KEY = process.env.FAUCET_PRIVATE_KEY;
  */
 const RESERVE_WEI = 90_000_000_000_000_000n; // 0.09 MON
 
-const pool = new RpcPool();
+// pinSends is not optional here. This route assigns its own sequential nonces, and endpoints do
+// not share a mempool -- spreading a nonce run across hosts makes each one see gaps and hold the
+// transactions it cannot place. The symptom appears later and elsewhere, as players whose wallets
+// were "funded" reporting insufficient balance.
+const pool = new RpcPool({ pinSends: true });
 
 /** Serialises all sends. Every request appends to this chain, so nonces are handed out in order. */
 let queue: Promise<unknown> = Promise.resolve();
@@ -56,6 +81,27 @@ let dripCount = 0;
 /** Per-address cooldown, a second line of defence behind the balance check. */
 const lastDripAt = new Map<string, number>();
 const COOLDOWN_MS = 15_000;
+
+/**
+ * Polls for a receipt and reports whether the transaction actually succeeded.
+ *
+ * Checks `status`, not merely presence: on Monad these failures come back as MINED receipts with
+ * status 0, so treating "a receipt exists" as success would report a funded wallet that has no
+ * funds -- the exact failure this whole waiting scheme exists to prevent.
+ */
+async function waitForInclusion(hash: string, timeoutMs = 12_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 200));
+    try {
+      const receipt = await pool.call<{ status: string } | null>("eth_getTransactionReceipt", [hash]);
+      if (receipt) return receipt.status === "0x1";
+    } catch {
+      // Transient read failure; keep polling until the deadline.
+    }
+  }
+  return false;
+}
 
 function enqueue<T>(task: () => Promise<T>): Promise<T> {
   const result = queue.then(task, task);
@@ -150,12 +196,22 @@ export async function POST(request: NextRequest) {
 
       try {
         // A plain value transfer to an EOA: exactly 21,000 gas, no estimate needed.
-        return await client.sendTransaction({
+        const hash = await client.sendTransaction({
           to: address as `0x${string}`,
           value: amountWei,
           gas: 21_000n,
           nonce,
         });
+
+        // Wait for inclusion before releasing the queue. See the note above: not waiting silently
+        // loses most of the sends on real Monad testnet.
+        const minedOk = await waitForInclusion(hash);
+        if (!minedOk) {
+          nextNonce = undefined;
+          throw new Error("Funding transaction did not succeed; please try again");
+        }
+
+        return hash;
       } catch (error) {
         // Resynchronise on the next request rather than leaving a permanently wrong local nonce.
         nextNonce = undefined;

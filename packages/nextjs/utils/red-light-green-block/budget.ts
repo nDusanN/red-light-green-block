@@ -146,11 +146,18 @@ export function oneFullRunGas(trackLength: number = TRACK_LENGTH): bigint {
 /**
  * Steps a burner is initially funded for.
  *
- * 8, chosen against the elimination curve rather than the track length. A player who survives past
- * this is by definition a small minority and gets topped up on demand; funding everyone for 20
- * steps up front would cut the number of people who can play by roughly a factor of three.
+ * 30 — a full 20-step track plus half again in margin.
+ *
+ * This was 8 while the hot wallet was expected to hold 2-3 MON, chosen against the elimination
+ * curve so a fixed budget would stretch across the room. With 45 MON that constraint is gone, and
+ * being stingy inverts from a saving into a liability: a player who exhausts their gas mid-race has
+ * to hit the top-up path, and that is one more thing that can be slow or rate-limited at exactly
+ * the moment the room is watching.
+ *
+ * Funding a whole run up front makes the top-up path a safety net rather than a load-bearing part
+ * of the demo. At ~0.15 MON each, 45 MON still funds around 300 players -- far more than the room.
  */
-export const INITIAL_FUNDED_STEPS = 8;
+export const INITIAL_FUNDED_STEPS = 30;
 
 /**
  * The balance a burner is topped up TO.

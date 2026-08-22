@@ -106,16 +106,17 @@ test("top-up fills to the target when genuinely low", () => {
   assert.equal(low + amount, target, "a top-up must land exactly on the target, never above it");
 });
 
-test("a burner is funded for a realistic session, not a full run", () => {
+test("a burner is funded for a whole run, so the top-up path is only a safety net", () => {
   const target = targetBurnerBalanceWei();
   const sessionCost = sessionGas(INITIAL_FUNDED_STEPS) * MEASURED_GAS_PRICE_WEI;
   const fullRunCost = oneFullRunGas() * MEASURED_GAS_PRICE_WEI;
 
   assert.equal(target, sessionCost, "the drip must be exactly a funded session");
-  // The decisive property: funding a realistic session rather than a full track is what multiplies
-  // how many people can play from a fixed amount of MON.
-  assert.ok(target < fullRunCost, "must not provision every player for the whole track");
-  assert.ok(fullRunCost > target * 2n, "a full run should be several times a funded session");
+  // The property that matters now that the budget is comfortable: a player must never need a
+  // top-up mid-race. The top-up path is one more thing that can be slow or rate-limited at the
+  // moment the room is watching, so it should be a safety net rather than load-bearing.
+  assert.ok(target > fullRunCost, "a burner must be able to finish the track without a top-up");
+  assert.ok(target < fullRunCost * 3n, "but not so much that an abandoned burner wastes a lot");
 });
 
 test("burnersFundable reports what a hot wallet can actually serve", () => {
@@ -123,7 +124,7 @@ test("burnersFundable reports what a hot wallet can actually serve", () => {
   const oneMon = 10n ** 18n;
 
   const fromOne = burnersFundable(oneMon, target);
-  assert.ok(fromOne >= 18 && fromOne <= 30, `1 MON funding ${fromOne} burners looks wrong`);
+  assert.ok(fromOne >= 4 && fromOne <= 12, `1 MON funding ${fromOne} burners looks wrong`);
   // Roughly linear, but not exactly: this is integer division, so five times the balance funds at
   // least five times as many burners and usually one or two more from the accumulated remainders.
   const fromFive = burnersFundable(oneMon * 5n, target);
@@ -132,9 +133,12 @@ test("burnersFundable reports what a hot wallet can actually serve", () => {
   assert.equal(burnersFundable(0n, target), 0);
 });
 
-test("a 50-player room needs a hot wallet planned in advance, not topped up on the day", () => {
+test("the funded hot wallet comfortably covers a full room", () => {
   const target = targetBurnerBalanceWei();
-  const needed = burnersFundable(10n ** 18n, target);
-  // This is the number that has to be in the README: one faucet claim does not cover a room.
-  assert.ok(needed < 50, "if one claim covered 50 players there would be no constraint to document");
+  // 45 MON was swept into the hot wallet after the deploy.
+  const room = burnersFundable(45n * 10n ** 18n, target);
+  assert.ok(room > 100, `45 MON should fund well over a room, got ${room}`);
+  // And one faucet claim alone still does not, which is why the wallet has to be funded ahead of
+  // time rather than on the day.
+  assert.ok(burnersFundable(10n ** 18n, target) < 50);
 });

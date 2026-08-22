@@ -55,8 +55,34 @@ export const DEFAULT_HTTP_ENDPOINTS: RpcEndpoint[] = parseEndpointsFromEnv() ?? 
   { url: "https://rpc.ankr.com/monad_testnet", weight: 2 },
 ];
 
-function parseEndpointsFromEnv(): RpcEndpoint[] | undefined {
-  const raw = process.env.NEXT_PUBLIC_RLGB_RPC_URLS;
+/**
+ * Endpoints that may serve `eth_call`.
+ *
+ * MEASURED, NOT ASSUMED: `https://monad-testnet.drpc.org` rejects EVERY `eth_call` with
+ * `"user-specified gas exceeds provider limit"` (code -32603), even when the request specifies no
+ * gas at all. It is excellent at absorbing transaction bursts (60/60 concurrent) and useless for
+ * reads.
+ *
+ * This is the sharpest edge found in the whole build. Routing reads round-robin across a pool that
+ * included drpc meant roughly half of all contract reads failed, which surfaced as the game
+ * randomly failing to find the round -- a symptom that looks like a contract bug and is not one.
+ *
+ * So the pool is split by method rather than by host: sends go to whatever absorbs load best,
+ * reads go only to hosts that actually answer them.
+ */
+export const DEFAULT_CALL_ENDPOINTS: RpcEndpoint[] = parseEndpointsFromEnv("NEXT_PUBLIC_RLGB_CALL_URLS") ?? [
+  { url: "https://testnet-rpc.monad.xyz", weight: 3 },
+  { url: "https://rpc.ankr.com/monad_testnet", weight: 2 },
+];
+
+/** Methods that must avoid endpoints which refuse to execute reads. */
+const READ_ONLY_METHODS = new Set(["eth_call", "eth_estimateGas"]);
+
+function parseEndpointsFromEnv(varName = "NEXT_PUBLIC_RLGB_RPC_URLS"): RpcEndpoint[] | undefined {
+  const raw =
+    varName === "NEXT_PUBLIC_RLGB_CALL_URLS"
+      ? (process.env.NEXT_PUBLIC_RLGB_CALL_URLS ?? process.env.NEXT_PUBLIC_RLGB_RPC_URLS)
+      : process.env.NEXT_PUBLIC_RLGB_RPC_URLS;
   if (!raw) return undefined;
 
   const endpoints = raw
@@ -83,6 +109,22 @@ export const MONAD_TESTNET_CHAIN_ID = 10143;
 
 export type RpcPoolOptions = {
   endpoints?: RpcEndpoint[];
+  /** Endpoints allowed to serve `eth_call`. Defaults to DEFAULT_CALL_ENDPOINTS. */
+  callEndpoints?: RpcEndpoint[];
+  /**
+   * Pin every `eth_sendRawTransaction` to a single endpoint.
+   *
+   * REQUIRED for any sender that assigns its own sequential nonces — the faucet, and the load
+   * test's funding loop. Endpoints do not share a mempool, so spreading nonces N, N+1, N+2 across
+   * three hosts means each host sees a sequence full of gaps and holds or rejects the transactions
+   * it cannot connect to a predecessor. The visible symptom is downstream and misleading: wallets
+   * that were "funded" report `Signer had insufficient balance`.
+   *
+   * Round-robin is right for independent transactions from many different accounts, and wrong for
+   * a run of nonces from one account. This makes that distinction explicit instead of leaving it
+   * to luck.
+   */
+  pinSends?: boolean;
   maxAttempts?: number;
   /** Base backoff in ms; grows exponentially and is then jittered. */
   baseBackoffMs?: number;
@@ -118,6 +160,8 @@ function jitter(ms: number): number {
 
 export class RpcPool {
   private readonly table: string[];
+  private readonly callTable: string[];
+  private readonly pinnedSendUrl?: string;
   private readonly maxAttempts: number;
   private readonly baseBackoffMs: number;
   private readonly onRetry?: RpcPoolOptions["onRetry"];
@@ -129,6 +173,15 @@ export class RpcPool {
   constructor(options: RpcPoolOptions = {}) {
     const endpoints = options.endpoints ?? DEFAULT_HTTP_ENDPOINTS;
     this.table = expand(endpoints);
+    // When the caller pins a specific endpoint list (a local Anvil, a paid key), trust it for
+    // reads too rather than silently falling back to the public defaults.
+    this.callTable = expand(options.callEndpoints ?? (options.endpoints ? endpoints : DEFAULT_CALL_ENDPOINTS));
+
+    if (options.pinSends) {
+      // Chosen at random rather than always the first, so several independent senders still spread
+      // across the pool even though each one individually stays put.
+      this.pinnedSendUrl = this.table[Math.floor(Math.random() * this.table.length)];
+    }
     this.maxAttempts = options.maxAttempts ?? 5;
     this.baseBackoffMs = options.baseBackoffMs ?? 120;
     this.onRetry = options.onRetry;
@@ -142,8 +195,11 @@ export class RpcPool {
    * The cursor starts at a random offset so that many clients loading the page simultaneously do
    * not all begin on the same endpoint.
    */
-  private next(): string {
-    return this.table[this.cursor++ % this.table.length];
+  private next(method: string): string {
+    if (method === "eth_sendRawTransaction" && this.pinnedSendUrl) return this.pinnedSendUrl;
+
+    const table = READ_ONLY_METHODS.has(method) && this.callTable.length > 0 ? this.callTable : this.table;
+    return table[this.cursor++ % table.length];
   }
 
   /**
@@ -157,7 +213,7 @@ export class RpcPool {
     let lastReason = "unknown";
 
     for (let attempt = 1; attempt <= this.maxAttempts; attempt++) {
-      const url = this.next();
+      const url = this.next(method);
       this.stats.requests++;
 
       let response: Response;
@@ -204,6 +260,11 @@ export class RpcPool {
       this.maxAttempts,
       lastStatus,
     );
+  }
+
+  /** The endpoint sends are pinned to, if any. Exposed so callers can report it honestly. */
+  get pinnedEndpoint(): string | undefined {
+    return this.pinnedSendUrl;
   }
 
   private async backoff(attempt: number, url: string, reason: string): Promise<void> {
