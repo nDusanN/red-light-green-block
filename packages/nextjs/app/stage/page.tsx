@@ -5,6 +5,7 @@ import { decodeFunctionResult, encodeFunctionData } from "viem";
 import { useBlockClock } from "~~/hooks/red-light-green-block/useBlockClock";
 import { useGameFeed } from "~~/hooks/red-light-green-block/useGameFeed";
 import { RED_LIGHT_GREEN_BLOCK_ABI } from "~~/utils/red-light-green-block/abi";
+import { type ChainBaseline, loadMultiple, sampleBaseline } from "~~/utils/red-light-green-block/chainload";
 import { COMMIT_LABEL, COMMIT_OPACITY } from "~~/utils/red-light-green-block/commit";
 import { type RoundInfo, gameAddress } from "~~/utils/red-light-green-block/contract";
 import {
@@ -74,6 +75,13 @@ export default function StagePage() {
 
   const feed = useGameFeed(address, round?.roundId);
 
+  // Measured once at startup rather than hardcoded: a number baked into source is a number that
+  // silently becomes a lie.
+  const [baseline, setBaseline] = useState<ChainBaseline>();
+  useEffect(() => {
+    sampleBaseline(pool, 20).then(setBaseline);
+  }, [pool]);
+
   // All-day win tally, accumulated from Won events as they arrive and kept in localStorage.
   // Deliberately not on-chain: a wins mapping would mean every winning transaction writes a slot
   // other players read, which is the shared write the whole storage design avoids.
@@ -100,6 +108,7 @@ export default function StagePage() {
   const dead = players.filter(p => p.eliminated);
   const txThisBlock = feed.txPerBlock.find(b => b.blockNumber === blockNumber)?.count ?? 0;
   const peakTx = feed.txPerBlock.reduce((max, b) => Math.max(max, b.count), 0);
+  const multiple = loadMultiple(peakTx, baseline);
 
   if (!address) {
     return (
@@ -137,10 +146,22 @@ export default function StagePage() {
           <div className="font-mono text-5xl tabular-nums">{blockNumber?.toString() ?? "…"}</div>
           <div className="text-lg opacity-60">block · 305ms</div>
           <div className="mt-2 text-lg">
-            <span className="opacity-60">tx this block </span>
+            <span className="opacity-60">moves this block </span>
             <span className="font-mono text-2xl tabular-nums text-amber-300">{txThisBlock}</span>
             <span className="ml-2 opacity-50">peak {peakTx}</span>
           </div>
+          {baseline && (
+            <div className="mt-1 text-sm leading-tight opacity-60">
+              <div>
+                rest of testnet ≈ {baseline.meanTxPerBlock.toFixed(1)} tx/block
+                <span className="opacity-70"> (measured, {baseline.sampleSize} blocks)</span>
+              </div>
+              {multiple !== undefined && (
+                <div className="text-amber-300">this room = {multiple.toFixed(1)}× the rest of the testnet</div>
+              )}
+              <div>blocks are {baseline.meanFillPercent.toFixed(1)}% full — the chain is not the constraint</div>
+            </div>
+          )}
         </div>
       </div>
 

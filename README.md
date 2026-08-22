@@ -274,6 +274,32 @@ A wrong hypothesis worth recording: the first explanation was nonce gaps across 
 separate mempools. Pinning all sequential sends to one endpoint did not fix it, so the hypothesis
 was discarded rather than reported.
 
+### How busy is the chain, really?
+
+Sampled 19 recent testnet blocks directly:
+
+|  |  |
+|---|---|
+| Transactions per block | min 1 · **p50 3** · max 6 · mean 3.68 |
+| Mean `gasUsed` | 913,605 |
+| Block gas limit | **150,000,000** (read from the block, not assumed) |
+| Blocks are | **0.61% full** |
+
+So a room of 50 players stepping once per block would produce roughly **14.6× the transaction rate
+of the entire rest of the testnet** — while taking a block from 0.61% to about **2.3% full**.
+
+Both halves of that matter, and the second is what keeps it honest:
+
+> This is **not a throughput benchmark**. Nothing here probes Monad's capacity, and no TPS figure
+> derived from it says anything about the chain's limits. The interesting claim is the modest one:
+> a real-time, server-less, human-driven application is *comfortable* here, and **the chain was
+> never the constraint at any point in this build**. Both things that actually broke were
+> operational — the free RPC tier's per-IP rate limit, and the faucet.
+
+The stage view shows this live, labelled with its sample size. Our own moves are counted from the
+contract's events, so a reverted step is not counted even though it did occupy a slot — which
+understates our share rather than inflating it.
+
 ### `eth_getLogs` is capped at 100 blocks
 
 A wider range returns `{"code":-32614,"message":"eth_getLogs is limited to a 100 range"}`. At
