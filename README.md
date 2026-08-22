@@ -1,6 +1,12 @@
 # Red Light, Green Block
 
-An on-chain Squid Game for a room full of phones, built on Monad.
+An on-chain reflex race for a room full of phones, built on Monad.
+
+| | |
+|---|---|
+| **Play** | *URL published at the event* &nbsp;·&nbsp; `/play` |
+| **Contract** | **not yet deployed** — see [Deploying](#deploying) |
+| **Network** | Monad Testnet, chain id **10143** |
 
 A room races along a 20-step track. Tap STEP and you send a real transaction. If it lands in a
 **green** block you advance one step. If it lands in a **red** block you are eliminated, for good.
@@ -30,16 +36,20 @@ That question only exists at 300ms. It is the game.
 
 ## Deployed
 
-|  |  |
-|---|---|
-| Network | Monad Testnet (chain id **10143**) |
-| Contract | **not yet deployed — see Deploying** |
-| Explorer | https://testnet.monadvision.com |
-| Player view | `/play` |
+Explorer: https://testnet.monadvision.com
 
 > Deployment was blocked on funding: `faucet.monad.xyz` is bot-protected and returns HTTP 429 to
 > scripted requests, so a human has to claim. `packages/foundry/scripts-js/deployWhenFunded.js`
 > polls the deployer address and deploys the instant it is funded.
+
+### Prior art
+
+[SquidChain](https://squidchain.io) (Aurora / NEAR EVM) runs a similar red-light-green-light
+premise on-chain. It differs in the ways that matter here: it uses a backend server to drive
+rounds, features AI agents as players, and resolves elimination on *last to transact* rather than
+on block parity. Red Light, Green Block has no server at all, and elimination is decided purely by
+which block your transaction lands in — a rule anyone can evaluate offline for any block, past or
+future.
 
 ---
 
