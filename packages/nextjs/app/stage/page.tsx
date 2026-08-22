@@ -19,6 +19,7 @@ import {
 } from "~~/utils/red-light-green-block/leaderboard";
 import { TRACK_LENGTH, blocksUntilLightChange, lightAt } from "~~/utils/red-light-green-block/light";
 import { MEASURED_BLOCK_TIME_MS, RpcPool } from "~~/utils/red-light-green-block/rpc";
+import { LIGHT, MONAD, PLAYER } from "~~/utils/red-light-green-block/theme";
 
 /**
  * The big screen. Meant to be projected while the room plays on their phones.
@@ -77,6 +78,20 @@ export default function StagePage() {
 
   // Measured once at startup rather than hardcoded: a number baked into source is a number that
   // silently becomes a lie.
+  // Whoever is looking at this screen may also be playing on their phone. Reading their burner
+  // address lets their own dot be highlighted, which with fifty dots on a projector is the
+  // difference between watching the screen and looking back down at the phone.
+  const [me, setMe] = useState<string>();
+  useEffect(() => {
+    try {
+      const key = window.localStorage.getItem("rlgb.burner.privateKey.v1");
+      if (key)
+        import("viem/accounts").then(m => setMe(m.privateKeyToAccount(key as `0x${string}`).address.toLowerCase()));
+    } catch {
+      // No burner on this device; nothing to highlight.
+    }
+  }, []);
+
   const [baseline, setBaseline] = useState<ChainBaseline>();
   useEffect(() => {
     sampleBaseline(pool, 20).then(setBaseline);
@@ -120,17 +135,23 @@ export default function StagePage() {
 
   return (
     <main
-      className={`min-h-screen p-8 text-white transition-colors duration-150 ${
-        isGreen === undefined ? "bg-neutral-950" : isGreen ? "bg-green-950" : "bg-red-950"
-      }`}
+      className="min-h-screen p-8 text-white transition-colors duration-150"
+      style={{
+        backgroundColor: MONAD.black,
+        // A subtle wash of the light's colour over the Monad background, so the room can read the
+        // light from the back without it fighting the brand palette.
+        backgroundImage:
+          isGreen === undefined
+            ? "none"
+            : `linear-gradient(180deg, ${isGreen ? "rgba(34,197,94,0.16)" : "rgba(239,68,68,0.18)"}, transparent 55%)`,
+      }}
     >
       {/* Top bar: the light, the block ticker, the live counters */}
       <div className="flex items-start justify-between">
         <div>
           <div
-            className={`text-8xl font-black leading-none tracking-tighter ${
-              isGreen === undefined ? "text-neutral-500" : isGreen ? "text-green-400" : "text-red-500"
-            }`}
+            className="text-8xl font-black leading-none tracking-tighter"
+            style={{ color: isGreen === undefined ? LIGHT.unknown : isGreen ? LIGHT.green : LIGHT.red }}
           >
             {isGreen === undefined ? "…" : isGreen ? "GREEN" : "RED"}
           </div>
@@ -143,11 +164,15 @@ export default function StagePage() {
         </div>
 
         <div className="text-right">
-          <div className="font-mono text-5xl tabular-nums">{blockNumber?.toString() ?? "…"}</div>
+          <div className="font-mono text-5xl tabular-nums" style={{ color: MONAD.lightPurple }}>
+            {blockNumber?.toString() ?? "…"}
+          </div>
           <div className="text-lg opacity-60">block · 305ms</div>
           <div className="mt-2 text-lg">
             <span className="opacity-60">moves this block </span>
-            <span className="font-mono text-2xl tabular-nums text-amber-300">{txThisBlock}</span>
+            <span className="font-mono text-2xl tabular-nums" style={{ color: MONAD.cyan }}>
+              {txThisBlock}
+            </span>
             <span className="ml-2 opacity-50">peak {peakTx}</span>
           </div>
           {baseline && (
@@ -167,9 +192,9 @@ export default function StagePage() {
 
       {/* Counters: what the room cares about */}
       <div className="mt-6 flex gap-10 text-center">
-        <Counter label="PLAYERS IN" value={alive.length} className="text-green-400" />
-        <Counter label="ELIMINATED" value={dead.length} className="text-red-500" />
-        <Counter label="ROUND" value={round?.roundId ?? 0} className="text-white/80" />
+        <Counter label="PLAYERS IN" value={alive.length} color={LIGHT.green} />
+        <Counter label="ELIMINATED" value={dead.length} color={LIGHT.red} />
+        <Counter label="ROUND" value={round?.roundId ?? 0} color={MONAD.lightPurple} />
         <div>
           <div className="text-lg opacity-60">FEED</div>
           <div className={`text-2xl font-bold ${feed.connected ? "text-green-400" : "text-amber-400"}`}>
@@ -184,8 +209,12 @@ export default function StagePage() {
         {feed.txPerBlock.map(b => (
           <div
             key={b.blockNumber.toString()}
-            className="flex-1 rounded-t bg-amber-400/70"
-            style={{ height: `${Math.min(100, (b.count / Math.max(1, peakTx)) * 100)}%` }}
+            className="flex-1 rounded-t"
+            data-tx={b.count}
+            style={{
+              height: `${Math.min(100, (b.count / Math.max(1, peakTx)) * 100)}%`,
+              backgroundColor: MONAD.purple,
+            }}
             title={`block ${b.blockNumber}: ${b.count} tx`}
           />
         ))}
@@ -194,36 +223,48 @@ export default function StagePage() {
       {/* The track */}
       <div className="mt-8 space-y-2">
         {players.length === 0 && <p className="py-16 text-center text-3xl opacity-40">waiting for players…</p>}
-        {players.slice(0, 24).map(player => (
-          <div key={player.address} className="flex items-center gap-3">
-            <span className="w-28 shrink-0 font-mono text-sm opacity-50">
-              {player.address.slice(0, 6)}…{player.address.slice(-4)}
-            </span>
+        {players.slice(0, 24).map(player => {
+          const isMe = me !== undefined && player.address === me;
+          return (
+            <div key={player.address} className="flex items-center gap-3">
+              <span
+                className="w-28 shrink-0 font-mono text-sm"
+                style={{ color: isMe ? MONAD.cyan : MONAD.lightPurple, opacity: isMe ? 1 : 0.55 }}
+              >
+                {isMe ? "YOU" : `${player.address.slice(0, 6)}…${player.address.slice(-4)}`}
+              </span>
 
-            <div className="relative h-7 flex-1 rounded-full bg-white/5">
-              {/* Finish line */}
-              <div className="absolute right-0 top-0 h-full w-1 rounded-full bg-white/40" />
-              <div
-                className="absolute top-1/2 h-6 w-6 -translate-y-1/2 rounded-full transition-all duration-150"
-                style={{
-                  left: `calc(${(player.pos / TRACK_LENGTH) * 100}% - 12px)`,
-                  backgroundColor: player.won ? "#fbbf24" : player.eliminated ? "#dc2626" : "#4ade80",
-                  // The signature detail: speculative moves are translucent and harden as the
-                  // chain's commitment advances.
-                  opacity: player.eliminated ? 0.85 : COMMIT_OPACITY[player.commit],
-                  boxShadow: player.won ? "0 0 20px #fbbf24" : undefined,
-                }}
-              />
+              <div className="relative h-7 flex-1 rounded-full" style={{ backgroundColor: MONAD.deepPurple }}>
+                {/* Finish line */}
+                <div className="absolute right-0 top-0 h-full w-1 rounded-full bg-white/40" />
+                <div
+                  className="absolute top-1/2 h-6 w-6 -translate-y-1/2 rounded-full transition-all duration-150"
+                  style={{
+                    left: `calc(${(player.pos / TRACK_LENGTH) * 100}% - 12px)`,
+                    backgroundColor: player.won
+                      ? PLAYER.won
+                      : player.eliminated
+                        ? PLAYER.out
+                        : isMe
+                          ? PLAYER.you
+                          : PLAYER.alive,
+                    // The signature detail: speculative moves are translucent and harden as the
+                    // chain's commitment advances.
+                    opacity: player.eliminated ? 0.85 : COMMIT_OPACITY[player.commit],
+                    boxShadow: player.won ? `0 0 20px ${PLAYER.won}` : isMe ? `0 0 14px ${PLAYER.you}` : undefined,
+                  }}
+                />
+              </div>
+
+              <span className="w-14 shrink-0 text-right font-mono text-sm tabular-nums">
+                {player.pos}/{TRACK_LENGTH}
+              </span>
+              <span className="w-20 shrink-0 text-xs opacity-40">
+                {player.eliminated ? "out" : COMMIT_LABEL[player.commit]}
+              </span>
             </div>
-
-            <span className="w-14 shrink-0 text-right font-mono text-sm tabular-nums">
-              {player.pos}/{TRACK_LENGTH}
-            </span>
-            <span className="w-20 shrink-0 text-xs opacity-40">
-              {player.eliminated ? "out" : COMMIT_LABEL[player.commit]}
-            </span>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {round?.winner && round.winner !== "0x0000000000000000000000000000000000000000" && (
@@ -263,11 +304,13 @@ export default function StagePage() {
   );
 }
 
-function Counter({ label, value, className }: { label: string; value: number; className?: string }) {
+function Counter({ label, value, color }: { label: string; value: number; color?: string }) {
   return (
     <div>
       <div className="text-lg opacity-60">{label}</div>
-      <div className={`font-mono text-6xl font-black tabular-nums ${className ?? ""}`}>{value}</div>
+      <div className="font-mono text-6xl font-black tabular-nums" style={{ color }}>
+        {value}
+      </div>
     </div>
   );
 }

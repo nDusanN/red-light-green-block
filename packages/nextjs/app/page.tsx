@@ -5,6 +5,7 @@ import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
 import { gameAddress } from "~~/utils/red-light-green-block/contract";
 import { TRACK_LENGTH } from "~~/utils/red-light-green-block/light";
+import { LIGHT, MONAD } from "~~/utils/red-light-green-block/theme";
 
 /**
  * The join screen, meant to be projected.
@@ -23,12 +24,19 @@ export default function Home() {
   }, []);
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-8 bg-neutral-950 p-8 text-white">
+    <main
+      className="flex min-h-screen flex-col items-center justify-center gap-8 p-8 text-white"
+      style={{ backgroundColor: MONAD.black }}
+    >
       <div className="text-center">
+        {/* One "gmonad" is the whole in-joke. More would be trying too hard. */}
+        <p className="mb-2 font-mono text-sm tracking-widest" style={{ color: MONAD.lightPurple }}>
+          gmonad
+        </p>
         <h1 className="text-6xl font-black tracking-tighter">
-          RED LIGHT, <span className="text-green-400">GREEN BLOCK</span>
+          RED LIGHT, <span style={{ color: LIGHT.green }}>GREEN BLOCK</span>
         </h1>
-        <p className="mt-4 text-xl opacity-80">
+        <p className="mt-4 text-xl" style={{ color: MONAD.lightPurple }}>
           The traffic light is a pure function of the block number.
           <br />
           No server. No admin. No oracle. The chain is the referee.
@@ -44,7 +52,7 @@ export default function Home() {
       </div>
 
       <div className="text-center">
-        <Link href="/play" className="text-2xl font-bold text-green-400 underline">
+        <Link href="/play" className="font-mono text-2xl font-bold underline" style={{ color: MONAD.cyan }}>
           {playUrl ?? "/play"}
         </Link>
         <p className="mt-3 max-w-xl opacity-70">
@@ -70,7 +78,7 @@ export default function Home() {
             {address.slice(0, 10)}…{address.slice(-8)}
           </a>
         ) : (
-          <span className="text-amber-400">contract not deployed yet</span>
+          <span style={{ color: MONAD.lightPurple }}>contract not deployed yet</span>
         )}
       </div>
     </main>

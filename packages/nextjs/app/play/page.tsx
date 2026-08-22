@@ -9,6 +9,7 @@ import { RED_LIGHT_GREEN_BLOCK_ABI, type RoundInfo, gameAddress } from "~~/utils
 import { JOIN_GAS_LIMIT, START_ROUND_GAS_LIMIT, stepGasLimit } from "~~/utils/red-light-green-block/gas";
 import { TRACK_LENGTH, blocksUntilLightChange, lightAt, stepWindow } from "~~/utils/red-light-green-block/light";
 import { MEASURED_BLOCK_TIME_MS, RpcPool } from "~~/utils/red-light-green-block/rpc";
+import { LIGHT, MONAD } from "~~/utils/red-light-green-block/theme";
 
 /**
  * The player view. One phone, one thumb.
@@ -277,7 +278,7 @@ export default function PlayPage() {
 
   return (
     <Shell>
-      <div className="flex items-baseline justify-between text-xs opacity-70">
+      <div className="flex items-baseline justify-between font-mono text-xs opacity-70">
         <span>block {blockNumber?.toString() ?? "…"}</span>
         <span>
           {clock.source === "websocket" ? "live feed" : clock.source === "http" ? "polling" : "connecting"}
@@ -290,9 +291,10 @@ export default function PlayPage() {
 
       {/* The light. Deliberately the biggest thing on the screen. */}
       <div
-        className={`mt-3 flex h-44 flex-col items-center justify-center rounded-3xl transition-colors duration-100 ${
-          isGreen === undefined ? "bg-neutral-700" : isGreen ? "bg-green-500" : "bg-red-600"
-        }`}
+        className="mt-3 flex h-44 flex-col items-center justify-center rounded-3xl transition-colors duration-100"
+        style={{
+          backgroundColor: isGreen === undefined ? LIGHT.unknown : isGreen ? LIGHT.green : LIGHT.red,
+        }}
       >
         <div className="text-5xl font-black tracking-tight text-black/80">
           {isGreen === undefined ? "…" : isGreen ? "GREEN" : "RED"}
@@ -323,10 +325,13 @@ export default function PlayPage() {
                     : "no round"}
           </span>
         </div>
-        <div className="mt-1 h-4 w-full overflow-hidden rounded-full bg-neutral-800">
+        <div className="mt-1 h-4 w-full overflow-hidden rounded-full" style={{ backgroundColor: MONAD.deepPurple }}>
           <div
-            className={`h-full transition-all ${me?.eliminated ? "bg-red-700" : "bg-green-400"}`}
-            style={{ width: `${((me?.pos ?? 0) / TRACK_LENGTH) * 100}%` }}
+            className="h-full transition-all"
+            style={{
+              width: `${((me?.pos ?? 0) / TRACK_LENGTH) * 100}%`,
+              backgroundColor: me?.eliminated ? LIGHT.red : MONAD.cyan,
+            }}
           />
         </div>
       </div>
@@ -351,17 +356,21 @@ export default function PlayPage() {
       {/* Actions */}
       <div className="mt-2 flex-1">
         {!round?.active ? (
-          <BigButton onClick={() => send("startRound")} disabled={busy} className="bg-blue-600">
+          <BigButton onClick={() => send("startRound")} disabled={busy} style={{ backgroundColor: MONAD.purple }}>
             START A ROUND
             <Sub>anyone can — there is no admin</Sub>
           </BigButton>
         ) : !me?.joined ? (
-          <BigButton onClick={() => send("join")} disabled={busy || !burner.balanceWei} className="bg-blue-600">
+          <BigButton
+            onClick={() => send("join")}
+            disabled={busy || !burner.balanceWei}
+            style={{ backgroundColor: MONAD.purple }}
+          >
             JOIN
             <Sub>{round.playerCount} in this round</Sub>
           </BigButton>
         ) : me.eliminated ? (
-          <BigButton onClick={() => send("startRound")} disabled className="bg-neutral-700">
+          <BigButton onClick={() => send("startRound")} disabled style={{ backgroundColor: MONAD.deepPurple }}>
             ELIMINATED
             <Sub>wait for the next round</Sub>
           </BigButton>
@@ -370,7 +379,7 @@ export default function PlayPage() {
             <BigButton
               onClick={() => send("safe")}
               disabled={busy || actedThisBlock}
-              className={safeWindow?.allGreen ? "bg-green-600" : "bg-red-700"}
+              style={{ backgroundColor: safeWindow?.allGreen ? MONAD.purple : LIGHT.red }}
             >
               SAFE STEP
               <Sub>
@@ -381,7 +390,7 @@ export default function PlayPage() {
             <BigButton
               onClick={() => send("dash")}
               disabled={busy || actedThisBlock}
-              className={dashWindow?.allGreen ? "bg-green-700" : "bg-amber-600"}
+              style={{ backgroundColor: dashWindow?.allGreen ? MONAD.purple : "#B45309" }}
             >
               DASH
               <Sub>
@@ -398,7 +407,8 @@ export default function PlayPage() {
               {dashWindow?.blocks.map(b => (
                 <div
                   key={b.blockNumber.toString()}
-                  className={`h-3 w-8 rounded ${b.isGreen ? "bg-green-500" : "bg-red-600"}`}
+                  className="h-3 w-8 rounded"
+                  style={{ backgroundColor: b.isGreen ? LIGHT.green : LIGHT.red }}
                   title={`block ${b.blockNumber}`}
                 />
               ))}
@@ -451,18 +461,19 @@ function BigButton({
   children,
   onClick,
   disabled,
-  className = "",
+  style,
 }: {
   children: React.ReactNode;
   onClick: () => void;
   disabled?: boolean;
-  className?: string;
+  style?: React.CSSProperties;
 }) {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`flex w-full flex-1 flex-col items-center justify-center rounded-2xl px-4 py-6 text-2xl font-black tracking-tight transition active:scale-[0.98] disabled:opacity-40 ${className}`}
+      style={style}
+      className="flex w-full flex-1 flex-col items-center justify-center rounded-2xl px-4 py-6 text-2xl font-black tracking-tight transition active:scale-[0.98] disabled:opacity-40"
     >
       {children}
     </button>
