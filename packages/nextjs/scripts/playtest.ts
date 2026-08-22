@@ -372,7 +372,7 @@ async function runBot(account: (typeof bots)[number], index: number) {
     // as fast as they are produced, so the observed number is routinely 1-2 blocks stale and a
     // window of +1 is often already in the past by the time the transaction is signed.
     const dash = Math.random() < DASH_RATE;
-    const lookahead = dash ? 30n : 15n;
+    const lookahead = dash ? 12n : 6n;
     const window = stepWindow(round.roundId, round.startBlock, block, block + lookahead);
 
     // Normally only step into a survivable window, but sometimes take the risk anyway, so the

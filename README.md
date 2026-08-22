@@ -5,12 +5,16 @@ An on-chain reflex race for a room full of phones, built on Monad.
 | | |
 |---|---|
 | **Play** | https://voice-colon-muscle-photography.trycloudflare.com/play |
-| **Contract** | **not yet deployed** — see [Deploying](#deploying) |
+| **Contract** | `0x407a47b8EBfd168bdA6B8D38243cf62Bad598003` ([explorer](https://testnet.monadvision.com/address/0x407a47b8EBfd168bdA6B8D38243cf62Bad598003)) |
 | **Network** | Monad Testnet, chain id **10143** |
 | **Repo** | https://github.com/nDusanN/red-light-green-block |
 
 > The play URL is a Cloudflare quick tunnel to the machine running the demo, so it is live only
-> while the event is. The contract address goes in this table the moment the deploy lands.
+> while the event is. The contract is permanent.
+
+**Verified working on live Monad testnet**, 4 concurrent bot players: 4 joins, 23 steps sent,
+**19 landed green, 4 eliminated on red**, zero send errors, zero throttling, inclusion latency p50
+885ms. A round auto-starter keeps a game running continuously so anyone can walk up and play.
 
 **A whole room really can play at once**, and that is measured rather than asserted: 12 simultaneous
 faucet requests produced **12 wallets funded on-chain in 0.79 s**, with zero nonce collisions and
@@ -213,7 +217,64 @@ same block retries in lockstep and throttles again together.
 `monadLogs` subscriptions (drpc rejects them on the free plan; monadinfra refuses the connection), so
 it is kept out of the transaction pool entirely.
 
-### Gas — `forge test`, cold storage via `vm.cool`, execution only
+### What Monad actually does differently — four things found by running it
+
+Each of these was found the hard way, cost real time, and would have broken the demo in front of
+the room. They are the most useful thing in this repository.
+
+**1. `gasUsed` in a receipt equals the DECLARED limit, not the gas consumed.** Sending `join` with
+`gas = 2 × 118,819` produced a receipt reporting `gasUsed = 237,638`. That is the
+charge-on-declared-limit model visible directly in a receipt, and it means a loose limit is a real
+cost rather than harmless padding. It also means **a reverted transaction costs the full declared
+limit** — a failing call is as expensive as a succeeding one.
+
+**2. A local EVM measurement is not a substitute for the chain.** Foundry measured a fresh `join`
+at 75,620 execution gas, giving a declared limit of 103,935. Live `eth_estimateGas` against the
+deployed contract returned **118,819**, about 23% higher. Every join ran out of gas.
+
+The symptom pointed somewhere else entirely: reverted joins were counted as successes (viem's
+`waitForTransactionReceipt` resolves just as happily on a reverted receipt), so every subsequent
+`step` failed with `NotJoined`, which the load test classified as "missed window". Two rounds of
+tuning went into a step-timing bug that did not exist. All declared limits now come from live
+estimates; the Foundry numbers are kept only as a regression check on the contract.
+
+**3. Consensus validates against state from `k=3` blocks ago, so a freshly funded wallet is
+invisible to it.** A wallet's first transaction is rejected with `Signer had insufficient balance`
+even though `eth_getBalance` already reports the funds and a receipt already exists. Waiting for
+the funding receipt is necessary and *not sufficient* — the client must let consensus catch up.
+This is a direct, observable consequence of asynchronous execution.
+
+**4. Below the 10 MON [reserve balance](https://docs.monad.xyz/developer-essentials/reserve-balance),
+an account can only send one *value-spending* transaction every 3 blocks.** Measured from a wallet
+holding 3.37 MON: four rapid 0.01 MON transfers gave 1 success and 3 mined-but-reverted. Awaiting
+each receipt gave 4/4. This constrains the **faucet**, not gameplay — `step()` sends `value = 0`,
+so a player's burner is unaffected. The faucet hot wallet is therefore kept above 10 MON, and its
+usable budget is `balance − 10 MON`.
+
+A wrong hypothesis worth recording: the first explanation was nonce gaps across endpoints with
+separate mempools. Pinning all sequential sends to one endpoint did not fix it, so the hypothesis
+was discarded rather than reported.
+
+### One more operational trap
+
+`https://monad-testnet.drpc.org` rejects **every** `eth_call` and `eth_estimateGas` with
+`"user-specified gas exceeds provider limit"`, even when the request specifies no gas at all. It is
+simultaneously the best endpoint for sends (60/60 concurrent burst) and useless for reads.
+Round-robining reads across it failed roughly half of all contract reads — which looks exactly like
+a contract bug and is not one. The pool now splits **by method**: sends go to whatever absorbs load
+best, reads only to hosts that answer them.
+
+### Declared gas limits — from LIVE `eth_estimateGas` against the deployed contract
+
+| Call | Live estimate | Declared (+7.5%) |
+|---|---|---|
+| `step` | 48,400 | 52,030 |
+| `step`, winning | — | 77,830 |
+| `join`, fresh address | 118,819 | 127,730 |
+| `startRound` | 37,050 | 39,828 |
+| Deployment | — | 2,072,845 actual |
+
+### Gas — `forge test`, cold storage via `vm.cool`, execution only (regression check)
 
 `vm.cool` matters: Foundry runs a whole test as one transaction, so without it every figure would be
 a warm-slot cost that no real standalone transaction enjoys.
@@ -253,8 +314,27 @@ would declare 58,680 for an ordinary step against our 42,054 — **24.2% cheaper
 > `pollingInterval`, not the chain — a measurement of the polling loop dressed up as a measurement of
 > Monad. It is 100ms now. Recorded because it is exactly the kind of number that ends up on a slide.
 
-**Not yet measured:** a 50-bot run against the public testnet RPC. The 429 rate under real room load
-is the open question, and it is stated as open rather than assumed fine.
+### End-to-end on LIVE Monad testnet — 4 bots against the deployed contract
+
+|  |  |
+|---|---|
+| Joins | 4 (0 failed) |
+| Steps sent / landed green | 23 / 19 |
+| Eliminated on red | 4 |
+| Send errors / throttled | 0 / 0 |
+| Inclusion latency | p50 885ms, p90 1276ms |
+| Furthest position | 6 / 20 |
+
+**Not yet measured:** a 50-bot run against the public testnet RPC. The 429 rate under genuine room
+load is the open question, and it is stated as open rather than assumed fine. Observed throttling
+at this scale was 0%.
+
+**The step window had to be tuned from data.** `SAFE_LOOKAHEAD` began at 1 — "execute in exactly
+the next block" — which was unplayable: a client cannot observe blocks as fast as they are
+produced. Polling `eth_blockNumber` for 9 seconds saw 27 transitions with gaps of min 57ms / p50
+309ms / max 612ms against a true 300ms block, so the observed number is routinely one to two blocks
+stale before signing begins. SAFE is now 6 and DASH 12, set above the measured p90 inclusion of 4.1
+blocks so that "you cannot die" actually holds.
 
 ---
 
@@ -372,5 +452,7 @@ yarn next:test              # confirm TypeScript still agrees
 | `packages/nextjs/app/play/page.tsx` | Player view |
 | `packages/nextjs/app/api/faucet/route.ts` | Gas drip |
 | `packages/nextjs/scripts/playtest.ts` | Headless multi-wallet playtest |
+| `packages/nextjs/scripts/autostart.ts` | Keeps a round running (permissionless, not a server) |
+| `packages/nextjs/app/stage/page.tsx` | Projector view with commitment-level rendering |
 
 Unaudited testnet demo code. No admin key, no upgradeability, no value at risk.
