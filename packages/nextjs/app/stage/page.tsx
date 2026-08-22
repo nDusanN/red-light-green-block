@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { decodeFunctionResult, encodeFunctionData } from "viem";
 import { useBlockClock } from "~~/hooks/red-light-green-block/useBlockClock";
 import { useGameFeed } from "~~/hooks/red-light-green-block/useGameFeed";
@@ -19,6 +19,7 @@ import {
 } from "~~/utils/red-light-green-block/leaderboard";
 import { TRACK_LENGTH, blocksUntilLightChange, lightAt } from "~~/utils/red-light-green-block/light";
 import { MEASURED_BLOCK_TIME_MS, RpcPool } from "~~/utils/red-light-green-block/rpc";
+import * as sound from "~~/utils/red-light-green-block/sound";
 import { LIGHT, MONAD, PLAYER } from "~~/utils/red-light-green-block/theme";
 
 /**
@@ -92,6 +93,13 @@ export default function StagePage() {
     }
   }, []);
 
+  const [soundOn, setSoundOn] = useState(false);
+  /** Addresses eliminated very recently, so their row can be made to look violent for a moment. */
+  const [justDied, setJustDied] = useState<{ address: string; at: number }[]>([]);
+  const knownDead = useRef(new Set<string>());
+  const lastLight = useRef<boolean | undefined>(undefined);
+  const lastWinner = useRef<string | undefined>(undefined);
+
   const [baseline, setBaseline] = useState<ChainBaseline>();
   useEffect(() => {
     sampleBaseline(pool, 20).then(setBaseline);
@@ -130,10 +138,71 @@ export default function StagePage() {
   // counter is never LOWER than the truth, which is the direction that matters when a presenter is
   // narrating it to a room.
   const joinedCount = Math.max(players.length, round?.playerCount ?? 0);
+  const recentlyDied = justDied.filter(d => Date.now() - d.at < 4000);
   const scanning = round?.active === true && joinedCount < 5;
   const txThisBlock = feed.txPerBlock.find(b => b.blockNumber === blockNumber)?.count ?? 0;
   const peakTx = feed.txPerBlock.reduce((max, b) => Math.max(max, b.count), 0);
   const multiple = loadMultiple(peakTx, baseline);
+
+  // The light changing is routine; a player dying to it is the moment. Both make a noise, but the
+  // elimination sound is deliberately the most distinctive one in the set.
+  useEffect(() => {
+    if (isGreen === undefined) return;
+    if (lastLight.current === undefined) {
+      lastLight.current = isGreen;
+      return;
+    }
+    if (lastLight.current !== isGreen) {
+      lastLight.current = isGreen;
+      if (isGreen) sound.playGreen();
+      else sound.playRed();
+    }
+  }, [isGreen]);
+
+  useEffect(() => {
+    const newlyDead = players.filter(p => p.eliminated && !knownDead.current.has(p.address));
+    if (newlyDead.length === 0) return;
+
+    newlyDead.forEach(p => knownDead.current.add(p.address));
+    const now = Date.now();
+    setJustDied(previous => [...previous.slice(-30), ...newlyDead.map(p => ({ address: p.address, at: now }))]);
+
+    // A whole red phase taking fifteen people at once should sound like an event, not fifteen
+    // identical blips.
+    if (newlyDead.length > 1) sound.playMassElimination(newlyDead.length);
+    else sound.playElimination();
+  }, [players]);
+
+  useEffect(() => {
+    const winner = round?.winner;
+    if (!winner || winner === "0x0000000000000000000000000000000000000000") return;
+    if (lastWinner.current === winner) return;
+    lastWinner.current = winner;
+    sound.playWin();
+  }, [round?.winner]);
+
+  // The callout expires by wall clock, so it needs something to re-render it away. The feed
+  // usually provides that, but a quiet moment right after a cull would otherwise leave ELIMINATED
+  // frozen on the projector until the next event arrived.
+  useEffect(() => {
+    if (justDied.length === 0) return;
+    const timer = setInterval(() => {
+      setJustDied(previous => {
+        const kept = previous.filter(d => Date.now() - d.at < 4000);
+        return kept.length === previous.length ? previous : kept;
+      });
+    }, 500);
+    return () => clearInterval(timer);
+  }, [justDied.length]);
+
+  // A new round means a clean slate; without this, players eliminated last round would never be
+  // announced again if they die in this one.
+  useEffect(() => {
+    knownDead.current.clear();
+    setJustDied([]);
+    lastWinner.current = undefined;
+    if (round?.roundId) sound.playRoundStart();
+  }, [round?.roundId]);
 
   if (!address) {
     return (
@@ -224,10 +293,24 @@ export default function StagePage() {
         <Counter label="ROUND" value={round?.roundId ?? 0} color={MONAD.lightPurple} />
         <div>
           <div className="text-lg opacity-60">FEED</div>
-          <div className={`text-2xl font-bold ${feed.connected ? "text-green-400" : "text-amber-400"}`}>
+          <div className="text-2xl font-bold" style={{ color: feed.connected ? LIGHT.green : "#FBBF24" }}>
             {feed.connected ? "live" : "reconnecting"}
           </div>
           <div className="text-xs opacity-50">{feed.eventsSeen} events</div>
+          {/* Browsers refuse to start audio without a real click, so this doubles as the unlock. */}
+          <button
+            className="mt-1 rounded px-2 py-1 text-xs underline"
+            style={{ color: soundOn ? MONAD.cyan : MONAD.lightPurple }}
+            onClick={() => {
+              const next = !soundOn;
+              if (next) sound.unlock();
+              sound.setMuted(!next);
+              setSoundOn(next);
+              if (next) sound.playRoundStart();
+            }}
+          >
+            {soundOn ? "sound on" : "enable sound"}
+          </button>
         </div>
       </div>
 
@@ -247,13 +330,46 @@ export default function StagePage() {
         ))}
       </div>
 
+      {/* THE ELIMINATION CALLOUT.
+          Judges consistently say one clear "oh — this is possible now" moment beats a tour of
+          features, and ours is the first time somebody in the room dies live in front of their
+          peers. So this is deliberately the loudest element on the screen while it is up: bigger
+          than the light, impossible to miss, and it names who died. A red phase that takes fifteen
+          people should look like an event, not a quiet state change. */}
+      {recentlyDied.length > 0 && (
+        <div className="pointer-events-none fixed inset-x-0 top-1/3 z-50 flex flex-col items-center">
+          <div
+            className="animate-pulse text-center text-8xl font-black tracking-tighter"
+            style={{ color: LIGHT.red, textShadow: `0 0 40px ${LIGHT.red}` }}
+          >
+            {recentlyDied.length > 1 ? `${recentlyDied.length} ELIMINATED` : "ELIMINATED"}
+          </div>
+          <div className="mt-2 flex flex-wrap justify-center gap-3">
+            {recentlyDied.slice(-8).map(d => (
+              <span
+                key={d.address + d.at}
+                className="rounded-lg px-3 py-1 font-mono text-2xl font-bold"
+                style={{ backgroundColor: LIGHT.red, color: "#fff" }}
+              >
+                {d.address.slice(0, 6)}…{d.address.slice(-4)}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* The track */}
       <div className="mt-8 space-y-2">
         {players.length === 0 && <p className="py-16 text-center text-3xl opacity-40">waiting for players…</p>}
         {players.slice(0, 24).map(player => {
           const isMe = me !== undefined && player.address === me;
+          const dyingNow = recentlyDied.some(d => d.address === player.address);
           return (
-            <div key={player.address} className="flex items-center gap-3">
+            <div
+              key={player.address}
+              className={`flex items-center gap-3 transition-all ${dyingNow ? "animate-pulse" : ""}`}
+              style={dyingNow ? { backgroundColor: "rgba(239,68,68,0.18)", borderRadius: 8 } : undefined}
+            >
               <span
                 className="w-28 shrink-0 font-mono text-sm"
                 style={{ color: isMe ? MONAD.cyan : MONAD.lightPurple, opacity: isMe ? 1 : 0.55 }}
