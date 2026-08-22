@@ -4,9 +4,18 @@ An on-chain reflex race for a room full of phones, built on Monad.
 
 | | |
 |---|---|
-| **Play** | *URL published at the event* &nbsp;·&nbsp; `/play` |
+| **Play** | https://voice-colon-muscle-photography.trycloudflare.com/play |
 | **Contract** | **not yet deployed** — see [Deploying](#deploying) |
 | **Network** | Monad Testnet, chain id **10143** |
+| **Repo** | https://github.com/nDusanN/red-light-green-block |
+
+> The play URL is a Cloudflare quick tunnel to the machine running the demo, so it is live only
+> while the event is. The contract address goes in this table the moment the deploy lands.
+
+**A whole room really can play at once**, and that is measured rather than asserted: 12 simultaneous
+faucet requests produced **12 wallets funded on-chain in 0.79 s**, with zero nonce collisions and
+zero dropped sends — roughly 15 wallets a second, so a 50-person room onboards in about three. Full
+numbers in [Measured numbers](#measured-numbers).
 
 A room races along a 20-step track. Tap STEP and you send a real transaction. If it lands in a
 **green** block you advance one step. If it lands in a **red** block you are eliminated, for good.

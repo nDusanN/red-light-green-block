@@ -54,6 +54,9 @@ export default function Home() {
       </div>
 
       <div className="flex gap-6 text-sm opacity-60">
+        <Link href="/stage" className="underline">
+          stage view
+        </Link>
         <Link href="/debug" className="underline">
           debug contracts
         </Link>
