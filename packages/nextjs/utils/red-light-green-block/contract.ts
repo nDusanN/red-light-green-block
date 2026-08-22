@@ -1,13 +1,13 @@
+import { MONAD_TESTNET_CHAIN_ID } from "./rpc.ts";
 import deployedContracts from "~~/contracts/deployedContracts";
-import { MONAD_TESTNET_CHAIN_ID } from "~~/utils/red-light-green-block/rpc";
+
+export { RED_LIGHT_GREEN_BLOCK_ABI } from "./abi.ts";
 
 /**
- * Where the game contract lives, and the slice of its ABI the client actually uses.
+ * Where the game contract lives.
  *
- * The ABI is written out here rather than imported wholesale from the generated
- * `deployedContracts` so the player view compiles and runs before anything is deployed. On event
- * day that matters: the frontend has to be buildable and testable while the deploy is still
- * blocked on a human clicking a faucet.
+ * The ABI itself lives in `abi.ts`, which has no imports, so it can be loaded by tooling that does
+ * not understand the Next.js `~~` path alias. It is re-exported here for convenience.
  */
 
 /** Set `NEXT_PUBLIC_RLGB_ADDRESS` to point a build at a specific deployment. */
@@ -32,134 +32,6 @@ export function gameAddress(chainId: number = MONAD_TESTNET_CHAIN_ID): `0x${stri
   if (!address || !/^0x[0-9a-fA-F]{40}$/.test(address)) return undefined;
   return address as `0x${string}`;
 }
-
-export const RED_LIGHT_GREEN_BLOCK_ABI = [
-  { type: "function", name: "startRound", inputs: [], outputs: [], stateMutability: "nonpayable" },
-  { type: "function", name: "join", inputs: [], outputs: [], stateMutability: "nonpayable" },
-  {
-    type: "function",
-    name: "step",
-    inputs: [{ name: "maxBlock", type: "uint32" }],
-    outputs: [],
-    stateMutability: "nonpayable",
-  },
-  {
-    type: "function",
-    name: "getRoundInfo",
-    inputs: [],
-    outputs: [
-      { name: "roundId", type: "uint32" },
-      { name: "startBlock", type: "uint48" },
-      { name: "endBlock", type: "uint48" },
-      { name: "active", type: "bool" },
-      { name: "winner", type: "address" },
-      { name: "playerCount", type: "uint256" },
-      { name: "currentBlock", type: "uint256" },
-    ],
-    stateMutability: "view",
-  },
-  {
-    type: "function",
-    name: "getPlayer",
-    inputs: [{ name: "addr", type: "address" }],
-    outputs: [
-      { name: "joined", type: "bool" },
-      { name: "pos", type: "uint16" },
-      { name: "eliminated", type: "bool" },
-      { name: "lastBlock", type: "uint32" },
-    ],
-    stateMutability: "view",
-  },
-  {
-    type: "function",
-    name: "getPlayers",
-    inputs: [{ name: "addrs", type: "address[]" }],
-    outputs: [
-      {
-        name: "out",
-        type: "tuple[]",
-        components: [
-          { name: "addr", type: "address" },
-          { name: "joined", type: "bool" },
-          { name: "pos", type: "uint16" },
-          { name: "eliminated", type: "bool" },
-          { name: "lastBlock", type: "uint32" },
-        ],
-      },
-    ],
-    stateMutability: "view",
-  },
-  {
-    type: "function",
-    name: "getRoster",
-    inputs: [
-      { name: "roundId_", type: "uint32" },
-      { name: "start", type: "uint256" },
-      { name: "count", type: "uint256" },
-    ],
-    outputs: [{ name: "page", type: "address[]" }],
-    stateMutability: "view",
-  },
-  {
-    type: "event",
-    name: "RoundStarted",
-    inputs: [
-      { name: "roundId", type: "uint32", indexed: true },
-      { name: "startBlock", type: "uint48", indexed: false },
-      { name: "endBlock", type: "uint48", indexed: false },
-    ],
-  },
-  {
-    type: "event",
-    name: "Joined",
-    inputs: [
-      { name: "roundId", type: "uint32", indexed: true },
-      { name: "player", type: "address", indexed: true },
-    ],
-  },
-  {
-    type: "event",
-    name: "Stepped",
-    inputs: [
-      { name: "roundId", type: "uint32", indexed: true },
-      { name: "player", type: "address", indexed: true },
-      { name: "newPos", type: "uint16", indexed: false },
-    ],
-  },
-  {
-    type: "event",
-    name: "Eliminated",
-    inputs: [
-      { name: "roundId", type: "uint32", indexed: true },
-      { name: "player", type: "address", indexed: true },
-      { name: "posAtElimination", type: "uint16", indexed: false },
-    ],
-  },
-  {
-    type: "event",
-    name: "Won",
-    inputs: [
-      { name: "roundId", type: "uint32", indexed: true },
-      { name: "player", type: "address", indexed: true },
-    ],
-  },
-  // Errors, so a revert can be reported as what it means rather than as a hex blob. The one that
-  // matters is StepWindowMissed: it is not a failure, it is the player correctly declining a move.
-  { type: "error", name: "RoundActive", inputs: [] },
-  { type: "error", name: "RoundNotActive", inputs: [] },
-  { type: "error", name: "AlreadyJoined", inputs: [] },
-  { type: "error", name: "NotJoined", inputs: [] },
-  { type: "error", name: "PlayerEliminated", inputs: [] },
-  { type: "error", name: "AlreadyActedThisBlock", inputs: [] },
-  {
-    type: "error",
-    name: "StepWindowMissed",
-    inputs: [
-      { name: "maxBlock", type: "uint32" },
-      { name: "currentBlock", type: "uint256" },
-    ],
-  },
-] as const;
 
 export type RoundInfo = {
   roundId: number;
