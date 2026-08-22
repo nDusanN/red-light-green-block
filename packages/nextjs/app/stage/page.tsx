@@ -7,6 +7,15 @@ import { useGameFeed } from "~~/hooks/red-light-green-block/useGameFeed";
 import { RED_LIGHT_GREEN_BLOCK_ABI } from "~~/utils/red-light-green-block/abi";
 import { COMMIT_LABEL, COMMIT_OPACITY } from "~~/utils/red-light-green-block/commit";
 import { type RoundInfo, gameAddress } from "~~/utils/red-light-green-block/contract";
+import {
+  type Leaderboard,
+  emptyLeaderboard,
+  loadLeaderboard,
+  recordWin,
+  saveLeaderboard,
+  topEntries,
+  totalRounds,
+} from "~~/utils/red-light-green-block/leaderboard";
 import { TRACK_LENGTH, blocksUntilLightChange, lightAt } from "~~/utils/red-light-green-block/light";
 import { MEASURED_BLOCK_TIME_MS, RpcPool } from "~~/utils/red-light-green-block/rpc";
 
@@ -64,6 +73,22 @@ export default function StagePage() {
   }, [refreshRound]);
 
   const feed = useGameFeed(address, round?.roundId);
+
+  // All-day win tally, accumulated from Won events as they arrive and kept in localStorage.
+  // Deliberately not on-chain: a wins mapping would mean every winning transaction writes a slot
+  // other players read, which is the shared write the whole storage design avoids.
+  const [board, setBoard] = useState<Leaderboard>(emptyLeaderboard());
+  useEffect(() => setBoard(loadLeaderboard()), []);
+
+  useEffect(() => {
+    if (!round?.winner || round.winner === "0x0000000000000000000000000000000000000000") return;
+    setBoard(previous => {
+      const next = recordWin(previous, round.winner, round.roundId);
+      // recordWin returns the same object for a duplicate, so this only writes on a real change.
+      if (next !== previous) saveLeaderboard(next);
+      return next;
+    });
+  }, [round?.winner, round?.roundId]);
 
   const blockNumber = clock.blockNumber;
   const isGreen = round && blockNumber ? lightAt(round.roundId, round.startBlock, blockNumber) : undefined;
@@ -183,6 +208,29 @@ export default function StagePage() {
       {round?.winner && round.winner !== "0x0000000000000000000000000000000000000000" && (
         <div className="mt-8 text-center text-5xl font-black text-amber-400">
           🏆 {round.winner.slice(0, 8)}… WINS ROUND {round.roundId}
+        </div>
+      )}
+
+      {/* All-day leaderboard: the reason to keep playing between pitches. */}
+      {board.entries.length > 0 && (
+        <div className="mt-8">
+          <div className="mb-2 flex items-baseline justify-between text-lg opacity-60">
+            <span>ALL-DAY WINS</span>
+            <span className="text-sm">{totalRounds(board)} rounds seen by this screen</span>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            {topEntries(board, 8).map((entry, i) => (
+              <div
+                key={entry.address}
+                className={`rounded-xl px-4 py-2 ${i === 0 ? "bg-amber-400/20 text-amber-300" : "bg-white/5"}`}
+              >
+                <span className="font-mono text-sm opacity-70">
+                  {entry.address.slice(0, 6)}…{entry.address.slice(-4)}
+                </span>
+                <span className="ml-3 font-mono text-xl font-black tabular-nums">{entry.wins}</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

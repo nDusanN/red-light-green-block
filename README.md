@@ -274,6 +274,26 @@ A wrong hypothesis worth recording: the first explanation was nonce gaps across 
 separate mempools. Pinning all sequential sends to one endpoint did not fix it, so the hypothesis
 was discarded rather than reported.
 
+### `eth_getLogs` is capped at 100 blocks
+
+A wider range returns `{"code":-32614,"message":"eth_getLogs is limited to a 100 range"}`. At
+304.8ms per block that is **30 seconds of history**. Any historical view has to page backwards in
+100-block windows and cannot cheaply reach back more than a few minutes.
+
+This is a concrete vindication of keeping the on-chain roster: enumerating the field costs one
+`eth_call`, where a log scan would need dozens of paged requests against the same rate limit the
+players are using — and still would not see far back.
+
+### Commitment levels do not arrive in order
+
+Observed live: one `RoundStarted` from this contract in block 55,949,133 was delivered as
+`Proposed → Voted → **Finalized** → **Verified**`. A renderer that used the most recent level would
+take a dot solid and then visibly fade it back — on a projector that reads as a glitch and
+discredits the exact claim the visual is making.
+
+Commitment is therefore treated as a **rank that only ever moves forward**. A test asserts opacity
+never decreases across all 24 permutations of the four levels.
+
 ### One more operational trap
 
 `https://monad-testnet.drpc.org` rejects **every** `eth_call` and `eth_estimateGas` with
@@ -472,6 +492,8 @@ yarn next:test              # confirm TypeScript still agrees
 | `packages/nextjs/app/api/faucet/route.ts` | Gas drip |
 | `packages/nextjs/scripts/playtest.ts` | Headless multi-wallet playtest |
 | `packages/nextjs/scripts/autostart.ts` | Keeps a round running (permissionless, not a server) |
+| `packages/nextjs/utils/red-light-green-block/commit.ts` | Commitment-level ranking (never downgrades) |
+| `packages/nextjs/utils/red-light-green-block/leaderboard.ts` | All-day win tally, off-chain by design |
 | `packages/nextjs/app/stage/page.tsx` | Projector view with commitment-level rendering |
 
 Unaudited testnet demo code. No admin key, no upgradeability, no value at risk.
