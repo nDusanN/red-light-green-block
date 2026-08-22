@@ -3,6 +3,26 @@ pragma solidity ^0.8.19;
 
 import { Script, console } from "forge-std/Script.sol";
 import { Vm } from "forge-std/Vm.sol";
+import { StdChains } from "forge-std/StdChains.sol";
+
+/**
+ * @notice Exposes forge-std's `internal` chain registry lookup as an external call.
+ *
+ * @dev `exportDeployments` needs to try a chain-name lookup and fall back when the chain is not in
+ *      forge-std's registry. `getChain` is `internal`, and `try`/`catch` only works on external
+ *      calls, so this used to be written as `try this.getChain()`. Recent Foundry rejects
+ *      `address(this)` inside a script contract, because script contracts are ephemeral and their
+ *      address is meaningless — which made every deployment revert AFTER broadcasting, leaving the
+ *      contract deployed but no artifact written.
+ *
+ *      Routing the call through a separate, deliberately deployed helper keeps the original
+ *      fallback behaviour without relying on the script's own address.
+ */
+contract ChainLookup is StdChains {
+    function chainName(uint256 chainId) external returns (string memory) {
+        return getChain(chainId).name;
+    }
+}
 
 contract ScaffoldETHDeploy is Script {
     error InvalidChain();
@@ -71,17 +91,13 @@ contract ScaffoldETHDeploy is Script {
 
         string memory chainName;
 
-        try this.getChain() returns (Chain memory chain) {
-            chainName = chain.name;
+        try new ChainLookup().chainName(block.chainid) returns (string memory name) {
+            chainName = name;
         } catch {
             chainName = findChainName();
         }
         jsonWrite = vm.serializeString(jsonWrite, "networkName", chainName);
         vm.writeJson(jsonWrite, path);
-    }
-
-    function getChain() public returns (Chain memory) {
-        return getChain(block.chainid);
     }
 
     function anvil_setBalance(address addr, uint256 amount) public {

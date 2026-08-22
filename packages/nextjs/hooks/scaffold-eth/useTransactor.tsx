@@ -73,13 +73,18 @@ export const useTransactor = (_walletClient?: WalletClient): TransactionFunc => 
         <TxnNotification message="Waiting for transaction to complete." blockExplorerLink={blockExplorerTxURL} />,
       );
 
-      transactionReceipt = await publicClient.waitForTransactionReceipt({
+      const receipt = await publicClient.waitForTransactionReceipt({
         hash: transactionHash,
         confirmations: options?.blockConfirmations,
       });
+      // Narrowed explicitly rather than asserted: the client's return type admits undefined, and
+      // silently casting that away would turn a missing receipt into a confusing crash further
+      // down instead of a clear message here.
+      if (!receipt) throw new Error("Transaction was sent but no receipt was returned");
+      transactionReceipt = receipt;
       notification.remove(notificationId);
 
-      if (transactionReceipt.status === "reverted") throw new Error("Transaction reverted");
+      if (receipt.status === "reverted") throw new Error("Transaction reverted");
 
       notification.success(
         <TxnNotification message="Transaction completed successfully!" blockExplorerLink={blockExplorerTxURL} />,
@@ -88,7 +93,7 @@ export const useTransactor = (_walletClient?: WalletClient): TransactionFunc => 
         },
       );
 
-      if (options?.onBlockConfirmation) options.onBlockConfirmation(transactionReceipt);
+      if (options?.onBlockConfirmation) options.onBlockConfirmation(receipt);
     } catch (error: any) {
       if (notificationId) {
         notification.remove(notificationId);

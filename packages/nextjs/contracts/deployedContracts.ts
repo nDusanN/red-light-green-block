@@ -4,6 +4,636 @@
  */
 import { GenericContractsDeclaration } from "~~/utils/scaffold-eth/contract";
 
-const deployedContracts = {} as const;
+const deployedContracts = {
+  31337: {
+    RedLightGreenBlock: {
+      address: "0xb19b36b1456e65e3a6d514d3f715f204bd59f431",
+      abi: [
+        {
+          type: "function",
+          name: "CYCLE_LENGTH_BLOCKS",
+          inputs: [],
+          outputs: [
+            {
+              name: "",
+              type: "uint256",
+              internalType: "uint256",
+            },
+          ],
+          stateMutability: "view",
+        },
+        {
+          type: "function",
+          name: "MAX_GREEN_BLOCKS",
+          inputs: [],
+          outputs: [
+            {
+              name: "",
+              type: "uint256",
+              internalType: "uint256",
+            },
+          ],
+          stateMutability: "view",
+        },
+        {
+          type: "function",
+          name: "MIN_GREEN_BLOCKS",
+          inputs: [],
+          outputs: [
+            {
+              name: "",
+              type: "uint256",
+              internalType: "uint256",
+            },
+          ],
+          stateMutability: "view",
+        },
+        {
+          type: "function",
+          name: "ROUND_LENGTH_BLOCKS",
+          inputs: [],
+          outputs: [
+            {
+              name: "",
+              type: "uint256",
+              internalType: "uint256",
+            },
+          ],
+          stateMutability: "view",
+        },
+        {
+          type: "function",
+          name: "TRACK_LENGTH",
+          inputs: [],
+          outputs: [
+            {
+              name: "",
+              type: "uint16",
+              internalType: "uint16",
+            },
+          ],
+          stateMutability: "view",
+        },
+        {
+          type: "function",
+          name: "getPlayer",
+          inputs: [
+            {
+              name: "addr",
+              type: "address",
+              internalType: "address",
+            },
+          ],
+          outputs: [
+            {
+              name: "joined",
+              type: "bool",
+              internalType: "bool",
+            },
+            {
+              name: "pos",
+              type: "uint16",
+              internalType: "uint16",
+            },
+            {
+              name: "eliminated",
+              type: "bool",
+              internalType: "bool",
+            },
+            {
+              name: "lastBlock",
+              type: "uint32",
+              internalType: "uint32",
+            },
+          ],
+          stateMutability: "view",
+        },
+        {
+          type: "function",
+          name: "getPlayers",
+          inputs: [
+            {
+              name: "addrs",
+              type: "address[]",
+              internalType: "address[]",
+            },
+          ],
+          outputs: [
+            {
+              name: "out",
+              type: "tuple[]",
+              internalType: "struct RedLightGreenBlock.PlayerView[]",
+              components: [
+                {
+                  name: "addr",
+                  type: "address",
+                  internalType: "address",
+                },
+                {
+                  name: "joined",
+                  type: "bool",
+                  internalType: "bool",
+                },
+                {
+                  name: "pos",
+                  type: "uint16",
+                  internalType: "uint16",
+                },
+                {
+                  name: "eliminated",
+                  type: "bool",
+                  internalType: "bool",
+                },
+                {
+                  name: "lastBlock",
+                  type: "uint32",
+                  internalType: "uint32",
+                },
+              ],
+            },
+          ],
+          stateMutability: "view",
+        },
+        {
+          type: "function",
+          name: "getRoster",
+          inputs: [
+            {
+              name: "roundId_",
+              type: "uint32",
+              internalType: "uint32",
+            },
+            {
+              name: "start",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "count",
+              type: "uint256",
+              internalType: "uint256",
+            },
+          ],
+          outputs: [
+            {
+              name: "page",
+              type: "address[]",
+              internalType: "address[]",
+            },
+          ],
+          stateMutability: "view",
+        },
+        {
+          type: "function",
+          name: "getRoundInfo",
+          inputs: [],
+          outputs: [
+            {
+              name: "roundId",
+              type: "uint32",
+              internalType: "uint32",
+            },
+            {
+              name: "startBlock",
+              type: "uint48",
+              internalType: "uint48",
+            },
+            {
+              name: "endBlock",
+              type: "uint48",
+              internalType: "uint48",
+            },
+            {
+              name: "active",
+              type: "bool",
+              internalType: "bool",
+            },
+            {
+              name: "winner",
+              type: "address",
+              internalType: "address",
+            },
+            {
+              name: "playerCount",
+              type: "uint256",
+              internalType: "uint256",
+            },
+            {
+              name: "currentBlock",
+              type: "uint256",
+              internalType: "uint256",
+            },
+          ],
+          stateMutability: "view",
+        },
+        {
+          type: "function",
+          name: "greenBlocksInCycle",
+          inputs: [
+            {
+              name: "roundId_",
+              type: "uint32",
+              internalType: "uint32",
+            },
+            {
+              name: "cycleIndex",
+              type: "uint256",
+              internalType: "uint256",
+            },
+          ],
+          outputs: [
+            {
+              name: "",
+              type: "uint256",
+              internalType: "uint256",
+            },
+          ],
+          stateMutability: "pure",
+        },
+        {
+          type: "function",
+          name: "isGreenAt",
+          inputs: [
+            {
+              name: "blockNumber",
+              type: "uint256",
+              internalType: "uint256",
+            },
+          ],
+          outputs: [
+            {
+              name: "",
+              type: "bool",
+              internalType: "bool",
+            },
+          ],
+          stateMutability: "view",
+        },
+        {
+          type: "function",
+          name: "isGreenNow",
+          inputs: [],
+          outputs: [
+            {
+              name: "",
+              type: "bool",
+              internalType: "bool",
+            },
+          ],
+          stateMutability: "view",
+        },
+        {
+          type: "function",
+          name: "isRoundActive",
+          inputs: [],
+          outputs: [
+            {
+              name: "",
+              type: "bool",
+              internalType: "bool",
+            },
+          ],
+          stateMutability: "view",
+        },
+        {
+          type: "function",
+          name: "join",
+          inputs: [],
+          outputs: [],
+          stateMutability: "nonpayable",
+        },
+        {
+          type: "function",
+          name: "lightAt",
+          inputs: [
+            {
+              name: "roundId_",
+              type: "uint32",
+              internalType: "uint32",
+            },
+            {
+              name: "roundStartBlock_",
+              type: "uint48",
+              internalType: "uint48",
+            },
+            {
+              name: "blockNumber",
+              type: "uint256",
+              internalType: "uint256",
+            },
+          ],
+          outputs: [
+            {
+              name: "isGreen",
+              type: "bool",
+              internalType: "bool",
+            },
+          ],
+          stateMutability: "pure",
+        },
+        {
+          type: "function",
+          name: "nextLightChangeAfter",
+          inputs: [
+            {
+              name: "roundId_",
+              type: "uint32",
+              internalType: "uint32",
+            },
+            {
+              name: "roundStartBlock_",
+              type: "uint48",
+              internalType: "uint48",
+            },
+            {
+              name: "blockNumber",
+              type: "uint256",
+              internalType: "uint256",
+            },
+          ],
+          outputs: [
+            {
+              name: "changeBlock",
+              type: "uint256",
+              internalType: "uint256",
+            },
+          ],
+          stateMutability: "pure",
+        },
+        {
+          type: "function",
+          name: "players",
+          inputs: [
+            {
+              name: "",
+              type: "address",
+              internalType: "address",
+            },
+          ],
+          outputs: [
+            {
+              name: "pos",
+              type: "uint16",
+              internalType: "uint16",
+            },
+            {
+              name: "roundId",
+              type: "uint32",
+              internalType: "uint32",
+            },
+            {
+              name: "lastBlock",
+              type: "uint32",
+              internalType: "uint32",
+            },
+            {
+              name: "eliminated",
+              type: "bool",
+              internalType: "bool",
+            },
+          ],
+          stateMutability: "view",
+        },
+        {
+          type: "function",
+          name: "rosterLength",
+          inputs: [
+            {
+              name: "roundId_",
+              type: "uint32",
+              internalType: "uint32",
+            },
+          ],
+          outputs: [
+            {
+              name: "",
+              type: "uint256",
+              internalType: "uint256",
+            },
+          ],
+          stateMutability: "view",
+        },
+        {
+          type: "function",
+          name: "round",
+          inputs: [],
+          outputs: [
+            {
+              name: "id",
+              type: "uint32",
+              internalType: "uint32",
+            },
+            {
+              name: "startBlock",
+              type: "uint48",
+              internalType: "uint48",
+            },
+            {
+              name: "endBlock",
+              type: "uint48",
+              internalType: "uint48",
+            },
+          ],
+          stateMutability: "view",
+        },
+        {
+          type: "function",
+          name: "roundWinner",
+          inputs: [],
+          outputs: [
+            {
+              name: "",
+              type: "address",
+              internalType: "address",
+            },
+          ],
+          stateMutability: "view",
+        },
+        {
+          type: "function",
+          name: "startRound",
+          inputs: [],
+          outputs: [],
+          stateMutability: "nonpayable",
+        },
+        {
+          type: "function",
+          name: "step",
+          inputs: [
+            {
+              name: "maxBlock",
+              type: "uint32",
+              internalType: "uint32",
+            },
+          ],
+          outputs: [],
+          stateMutability: "nonpayable",
+        },
+        {
+          type: "event",
+          name: "Eliminated",
+          inputs: [
+            {
+              name: "roundId",
+              type: "uint32",
+              indexed: true,
+              internalType: "uint32",
+            },
+            {
+              name: "player",
+              type: "address",
+              indexed: true,
+              internalType: "address",
+            },
+            {
+              name: "posAtElimination",
+              type: "uint16",
+              indexed: false,
+              internalType: "uint16",
+            },
+          ],
+          anonymous: false,
+        },
+        {
+          type: "event",
+          name: "Joined",
+          inputs: [
+            {
+              name: "roundId",
+              type: "uint32",
+              indexed: true,
+              internalType: "uint32",
+            },
+            {
+              name: "player",
+              type: "address",
+              indexed: true,
+              internalType: "address",
+            },
+          ],
+          anonymous: false,
+        },
+        {
+          type: "event",
+          name: "RoundStarted",
+          inputs: [
+            {
+              name: "roundId",
+              type: "uint32",
+              indexed: true,
+              internalType: "uint32",
+            },
+            {
+              name: "startBlock",
+              type: "uint48",
+              indexed: false,
+              internalType: "uint48",
+            },
+            {
+              name: "endBlock",
+              type: "uint48",
+              indexed: false,
+              internalType: "uint48",
+            },
+          ],
+          anonymous: false,
+        },
+        {
+          type: "event",
+          name: "Stepped",
+          inputs: [
+            {
+              name: "roundId",
+              type: "uint32",
+              indexed: true,
+              internalType: "uint32",
+            },
+            {
+              name: "player",
+              type: "address",
+              indexed: true,
+              internalType: "address",
+            },
+            {
+              name: "newPos",
+              type: "uint16",
+              indexed: false,
+              internalType: "uint16",
+            },
+          ],
+          anonymous: false,
+        },
+        {
+          type: "event",
+          name: "Won",
+          inputs: [
+            {
+              name: "roundId",
+              type: "uint32",
+              indexed: true,
+              internalType: "uint32",
+            },
+            {
+              name: "player",
+              type: "address",
+              indexed: true,
+              internalType: "address",
+            },
+          ],
+          anonymous: false,
+        },
+        {
+          type: "error",
+          name: "AlreadyActedThisBlock",
+          inputs: [],
+        },
+        {
+          type: "error",
+          name: "AlreadyJoined",
+          inputs: [],
+        },
+        {
+          type: "error",
+          name: "NotJoined",
+          inputs: [],
+        },
+        {
+          type: "error",
+          name: "PlayerEliminated",
+          inputs: [],
+        },
+        {
+          type: "error",
+          name: "RoundActive",
+          inputs: [],
+        },
+        {
+          type: "error",
+          name: "RoundNotActive",
+          inputs: [],
+        },
+        {
+          type: "error",
+          name: "StepWindowMissed",
+          inputs: [
+            {
+              name: "maxBlock",
+              type: "uint32",
+              internalType: "uint32",
+            },
+            {
+              name: "currentBlock",
+              type: "uint256",
+              internalType: "uint256",
+            },
+          ],
+        },
+      ],
+      inheritedFunctions: {},
+      deploymentFile: "run-1787399525242.json",
+      deploymentScript: "DeployRedLightGreenBlock.s.sol",
+    },
+  },
+} as const;
 
 export default deployedContracts satisfies GenericContractsDeclaration;
