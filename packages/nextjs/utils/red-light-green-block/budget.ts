@@ -122,10 +122,21 @@ export function estimateBudget({
 }
 
 /**
+ * Gas for a realistic session: one join plus `steps` steps.
+ *
+ * This, not a full run, is what a burner is funded for. With the measured 52.3% green share and
+ * permanent elimination, the median player dies in the first one or two red phases — provisioning
+ * everyone for a full track means the hot wallet is drained by people who never needed it, and
+ * every over-funded abandoned burner is someone later who cannot play at all.
+ */
+export function sessionGas(steps: number): bigint {
+  return JOIN_GAS_LIMIT + BigInt(steps) * STEP_GAS_LIMIT;
+}
+
+/**
  * Gas needed for one guaranteed full run: join, then the whole track.
  *
- * This is a ceiling, not an expectation. With the measured 52.3% green share and permanent
- * elimination, most players never get near the finish.
+ * A ceiling used for worst-case budgeting, NOT for sizing drips.
  */
 export function oneFullRunGas(trackLength: number = TRACK_LENGTH): bigint {
   const steps = BigInt(trackLength);
@@ -133,28 +144,29 @@ export function oneFullRunGas(trackLength: number = TRACK_LENGTH): bigint {
 }
 
 /**
- * The balance a burner wallet is topped up TO.
+ * Steps a burner is initially funded for.
  *
- * Deliberately stingy, and a target rather than a flat handout. With a hard MON budget every
- * over-funded wallet is a player who cannot play later, and MON sitting in a burner that someone
- * closed their browser on is gone for the rest of the event.
+ * 8, chosen against the elimination curve rather than the track length. A player who survives past
+ * this is by definition a small minority and gets topped up on demand; funding everyone for 20
+ * steps up front would cut the number of people who can play by roughly a factor of three.
+ */
+export const INITIAL_FUNDED_STEPS = 8;
+
+/**
+ * The balance a burner is topped up TO.
  *
- * 1.25 full runs: enough to certainly finish one race with slack for a few declined steps, not
- * enough to bank. A player who is eliminated early keeps the remainder and can rejoin without
- * asking for anything, and a player who genuinely runs low gets topped up again on demand. That
- * is far more efficient than guessing a generous amount up front.
+ * A target rather than a flat handout, and deliberately stingy. Derived from a live `eth_gasPrice`
+ * where the caller supplies one, so it self-corrects if the base fee moves rather than silently
+ * under-funding every wallet.
  */
 export function targetBurnerBalanceWei({
   gasPriceWei = MEASURED_GAS_PRICE_WEI,
-  trackLength = TRACK_LENGTH,
-  runs = 1.25,
+  steps = INITIAL_FUNDED_STEPS,
 }: {
   gasPriceWei?: bigint;
-  trackLength?: number;
-  runs?: number;
+  steps?: number;
 } = {}): bigint {
-  const perRun = oneFullRunGas(trackLength) * gasPriceWei;
-  return (perRun * BigInt(Math.round(runs * 100))) / 100n;
+  return sessionGas(steps) * gasPriceWei;
 }
 
 /**

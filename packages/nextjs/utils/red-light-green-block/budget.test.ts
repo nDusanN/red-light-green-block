@@ -1,10 +1,12 @@
 import {
   ASSUMED_DECLINE_RATE,
   FAUCET_MON_PER_WALLET_PER_DAY,
+  INITIAL_FUNDED_STEPS,
   MEASURED_GAS_PRICE_WEI,
   burnersFundable,
   estimateBudget,
   oneFullRunGas,
+  sessionGas,
   targetBurnerBalanceWei,
   topUpAmountWei,
 } from "./budget.ts";
@@ -104,12 +106,16 @@ test("top-up fills to the target when genuinely low", () => {
   assert.equal(low + amount, target, "a top-up must land exactly on the target, never above it");
 });
 
-test("a burner is funded for a full run but not for banking", () => {
+test("a burner is funded for a realistic session, not a full run", () => {
   const target = targetBurnerBalanceWei();
-  const oneRunCost = oneFullRunGas() * MEASURED_GAS_PRICE_WEI;
+  const sessionCost = sessionGas(INITIAL_FUNDED_STEPS) * MEASURED_GAS_PRICE_WEI;
+  const fullRunCost = oneFullRunGas() * MEASURED_GAS_PRICE_WEI;
 
-  assert.ok(target > oneRunCost, "must cover one guaranteed full run");
-  assert.ok(target < oneRunCost * 2n, "must not hand out two runs' worth up front");
+  assert.equal(target, sessionCost, "the drip must be exactly a funded session");
+  // The decisive property: funding a realistic session rather than a full track is what multiplies
+  // how many people can play from a fixed amount of MON.
+  assert.ok(target < fullRunCost, "must not provision every player for the whole track");
+  assert.ok(fullRunCost > target * 2n, "a full run should be several times a funded session");
 });
 
 test("burnersFundable reports what a hot wallet can actually serve", () => {
@@ -117,9 +123,12 @@ test("burnersFundable reports what a hot wallet can actually serve", () => {
   const oneMon = 10n ** 18n;
 
   const fromOne = burnersFundable(oneMon, target);
-  assert.ok(fromOne >= 5 && fromOne <= 12, `1 MON funding ${fromOne} burners looks wrong`);
-  // Scales linearly, and an empty hot wallet serves nobody.
-  assert.equal(burnersFundable(oneMon * 5n, target), fromOne * 5);
+  assert.ok(fromOne >= 18 && fromOne <= 30, `1 MON funding ${fromOne} burners looks wrong`);
+  // Roughly linear, but not exactly: this is integer division, so five times the balance funds at
+  // least five times as many burners and usually one or two more from the accumulated remainders.
+  const fromFive = burnersFundable(oneMon * 5n, target);
+  assert.ok(fromFive >= fromOne * 5, `${fromFive} should be at least ${fromOne * 5}`);
+  assert.ok(fromFive <= fromOne * 5 + 5);
   assert.equal(burnersFundable(0n, target), 0);
 });
 
